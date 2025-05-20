@@ -27,10 +27,10 @@ public class HdfsWatcherProperties {
 
     /**
      * The output binding name for stream mode (for StreamBridge).
-     * Default is 'output-out-0'.
+     * Default is 'output'.
      * Can be overridden via --hdfswatcher.outputBinding=my-binding or env HDFSWATCHER_OUTPUTBINDING.
      */
-    private String outputBinding = "output-out-0";
+    private String outputBinding = "output";
 
     public String getOutputBinding() { return outputBinding; }
     public void setOutputBinding(String outputBinding) { this.outputBinding = outputBinding; }
