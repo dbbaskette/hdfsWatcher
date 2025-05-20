@@ -6,6 +6,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConfigurationProperties(prefix = "hdfswatcher")
 public class HdfsWatcherProperties {
+    /**
+     * WebHDFS REST API base URI, e.g. http://hadoop-hdfs-service:9870
+     * If set, this will be used to generate WebHDFS URLs instead of hdfsUri.
+     */
+    private String webhdfsUri;
+
     /** Path of the HDFS directory to watch */
     private String hdfsPath;
     /** Poll interval in seconds */
@@ -34,6 +40,9 @@ public class HdfsWatcherProperties {
 
     public String getOutputBinding() { return outputBinding; }
     public void setOutputBinding(String outputBinding) { this.outputBinding = outputBinding; }
+
+    public String getWebhdfsUri() { return webhdfsUri; }
+    public void setWebhdfsUri(String webhdfsUri) { this.webhdfsUri = webhdfsUri; }
 
     public String getHdfsPath() { return hdfsPath; }
     public void setHdfsPath(String hdfsPath) { this.hdfsPath = hdfsPath; }

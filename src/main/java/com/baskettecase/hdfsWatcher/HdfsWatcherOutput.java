@@ -18,6 +18,7 @@ public class HdfsWatcherOutput {
         String json = "{\"type\":\"hdfs\",\"url\":\"" + webhdfsUrl + "\"}";
         if ("stream".equalsIgnoreCase(mode) || "scdf".equalsIgnoreCase(mode)) {
             String binding = properties.getOutputBinding();
+            System.out.println("[STREAM] " + json);
             streamBridge.send(binding, json);
         } else {
             System.out.println(json);

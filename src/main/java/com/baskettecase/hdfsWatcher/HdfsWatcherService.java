@@ -45,6 +45,39 @@ public class HdfsWatcherService {
     }
 
     private String buildWebHdfsUrl(Path path) {
-        return properties.getHdfsUri().replaceFirst("hdfs://", "webhdfs://") + path.toUri().getPath();
+        String baseUri = properties.getWebhdfsUri();
+        if (baseUri == null || baseUri.isEmpty()) {
+            // Fallback to hdfsUri logic for backward compatibility
+            String hdfsUri = properties.getHdfsUri();
+            String hostPort = "localhost:9000";
+            String scheme = "http";
+            if (hdfsUri != null && hdfsUri.startsWith("hdfs://")) {
+                String remainder = hdfsUri.substring("hdfs://".length());
+                int slashIdx = remainder.indexOf('/');
+                hostPort = (slashIdx >= 0) ? remainder.substring(0, slashIdx) : remainder;
+            } else if (hdfsUri != null && (hdfsUri.startsWith("http://") || hdfsUri.startsWith("https://"))) {
+                // If user already provides http(s) in hdfsUri
+                int schemeEnd = hdfsUri.indexOf("://");
+                scheme = hdfsUri.substring(0, schemeEnd);
+                String remainder = hdfsUri.substring(schemeEnd + 3);
+                int slashIdx = remainder.indexOf('/');
+                hostPort = (slashIdx >= 0) ? remainder.substring(0, slashIdx) : remainder;
+            }
+            baseUri = scheme + "://" + hostPort;
+        }
+        // URL-encode each path segment to handle spaces and special characters
+        StringBuilder encodedPath = new StringBuilder();
+        String[] segments = path.toUri().getPath().split("/");
+        for (String segment : segments) {
+            if (!segment.isEmpty()) {
+                try {
+                    // URLEncoder encodes space as +, but in URLs it should be %20
+                    encodedPath.append("/").append(java.net.URLEncoder.encode(segment, java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20"));
+                } catch (Exception e) {
+                    encodedPath.append("/").append(segment); // fallback to raw
+                }
+            }
+        }
+        return baseUri.replaceAll("/$","") + "/webhdfs/v1" + encodedPath.toString();
     }
 }
