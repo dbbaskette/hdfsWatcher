@@ -1,50 +1,61 @@
-# HdfsWatcher
+# HDFS Watcher
 
-A minimal Spring Boot application for watching an HDFS directory and outputting new file URLs as JSON, either to the terminal (standalone mode) or to a Spring Cloud Stream (RabbitMQ) (scdf mode).
+A Spring Boot application that monitors an HDFS directory and outputs new file URLs as JSON messages.
 
 ## Features
-- Watches a specified HDFS directory for new files
-- Outputs WebHDFS URLs as JSON objects
-- Two modes:
-  - **standalone**: prints JSON to the terminal/logs
-  - **scdf**: sends JSON to a message stream (RabbitMQ)
-- No embedded web server
-- Simple, minimal dependencies
 
-## Usage
+- Monitors HDFS directory for new files
+- Outputs WebHDFS URLs as JSON
+- Supports two modes:
+  - **standalone**: Logs to console
+  - **scdf**: Streams to RabbitMQ
+- Lightweight with minimal dependencies
 
-### Build
-```sh
-./mvnw clean package -DskipTests spring-boot:repackage
-```
+## Prerequisites
 
-### Run (Standalone)
-```sh
-java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=standalone
-```
+- Java 11+
+- Maven
+- Access to HDFS cluster
+- (For SCDF mode) RabbitMQ
 
-### Run (SCDF/Stream)
-```sh
-java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=scdf
-```
+## Quick Start
 
-Configure HDFS and other settings in the respective `application-standalone.properties` or `application-scdf.properties` files.
+1. **Build**
+   ```sh
+   ./mvnw clean package -DskipTests spring-boot:repackage
+   ```
+
+2. **Run in Standalone Mode**
+   ```sh
+   java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=standalone
+   ```
+
+3. **Run in SCDF Mode**
+   ```sh
+   java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=scdf
+   ```
+
+## Configuration
+
+Edit the appropriate properties file:
+- `src/main/resources/application-standalone.properties`
+- `src/main/resources/application-scdf.properties`
+
+Key properties:
+- `hdfswatcher.hdfsUri`: HDFS NameNode URI
+- `hdfswatcher.hdfsPath`: Directory to watch
+- `hdfswatcher.pollInterval`: Polling interval in seconds
+- `hdfswatcher.hdfsUser`: HDFS user
 
 ## Output Format
-Example JSON output:
+
 ```json
-{"type":"hdfs","url":"webhdfs://localhost:30800/test/yourfile"}
+{
+  "type": "hdfs",
+  "url": "webhdfs://localhost:30800/test/yourfile"
+}
 ```
 
-## Project Files
-- `instructions.txt`: Contains project-specific guidance, requirements, or setup notes, especially for automation or AI-assisted tasks.
-- `InitialAppPrompt.txt`: The initial prompt or requirements that guided the automated code generation for this project.
-- `versions.txt`: Records the versions of key dependencies and tools used to generate or build this project for reproducibility and reference.
-
-These files are primarily for documentation, reproducibility, and collaboration with automation tools or future maintainers.
-
-## .gitignore
-The repository ignores all build outputs (e.g., `target/`), IDE settings (e.g., `.vscode/`), and OS junk files by default.
-
 ## License
-MIT (or specify your license here)
+
+MIT
