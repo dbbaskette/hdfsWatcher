@@ -6,6 +6,10 @@ The application should:
 - the application name is hdfsWatcher and is in package com.baskettecase.hdfsWatcher
 - the application should be a Spring Boot application
 - the application should be a Spring Cloud Data Flow application
+- have 2 modes.
+    - Standalone mode which allows me to pass the HDFS information via app properties and receive the webhdfs urls to the terminal
+    - Stream mode which will create a stream that will place the webhdfs urls on a rabbitmq queue
+    
 
 When creating the stream which will instantiate the application we will pass the following parameters:
 - hdfsPath: the path of the hdfs directory to watch
