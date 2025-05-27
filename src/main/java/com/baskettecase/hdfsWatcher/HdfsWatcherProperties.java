@@ -37,8 +37,24 @@ public class HdfsWatcherProperties {
      * Can be overridden via --hdfswatcher.outputBinding=my-binding or env HDFSWATCHER_OUTPUTBINDING.
      */
     private String outputBinding = "output";
+    
+    /**
+     * Enable pseudo-operational mode (local file system instead of HDFS)
+     */
+    private boolean pseudoop = false;
+    
+    /**
+     * Local storage path for pseudo-operational mode
+     */
+    private String localStoragePath = "/tmp/hdfsWatcher";
 
     public String getOutputBinding() { return outputBinding; }
+    
+    public boolean isPseudoop() { return pseudoop; }
+    public void setPseudoop(boolean pseudoop) { this.pseudoop = pseudoop; }
+    
+    public String getLocalStoragePath() { return localStoragePath; }
+    public void setLocalStoragePath(String localStoragePath) { this.localStoragePath = localStoragePath; }
     public void setOutputBinding(String outputBinding) { this.outputBinding = outputBinding; }
 
     public String getWebhdfsUri() { return webhdfsUri; }

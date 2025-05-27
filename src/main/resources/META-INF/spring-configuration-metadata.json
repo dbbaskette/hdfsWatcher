@@ -1,0 +1,65 @@
+{
+  "groups": [
+    {
+      "name": "hdfswatcher",
+      "type": "com.baskettecase.hdfsWatcher.HdfsWatcherProperties",
+      "sourceType": "com.baskettecase.hdfsWatcher.HdfsWatcherProperties"
+    }
+  ],
+  "properties": [
+    {
+      "name": "hdfswatcher.pseudoop",
+      "type": "java.lang.Boolean",
+      "description": "Enable pseudo-operational mode (local file system instead of HDFS)",
+      "defaultValue": false
+    },
+    {
+      "name": "hdfswatcher.local-storage-path",
+      "type": "java.lang.String",
+      "description": "Local storage path for pseudo-operational mode",
+      "defaultValue": "/tmp/hdfsWatcher"
+    },
+    {
+      "name": "hdfswatcher.hdfs-uri",
+      "type": "java.lang.String",
+      "description": "HDFS URI (e.g., hdfs://localhost:9000)",
+      "defaultValue": "hdfs://localhost:9000"
+    },
+    {
+      "name": "hdfswatcher.hdfs-path",
+      "type": "java.lang.String",
+      "description": "HDFS path to watch",
+      "defaultValue": "/"
+    },
+    {
+      "name": "hdfswatcher.hdfs-user",
+      "type": "java.lang.String",
+      "description": "HDFS user for authentication",
+      "defaultValue": "${user.name}"
+    },
+    {
+      "name": "hdfswatcher.poll-interval",
+      "type": "java.lang.Integer",
+      "description": "Polling interval in seconds",
+      "defaultValue": 60
+    },
+    {
+      "name": "hdfswatcher.mode",
+      "type": "java.lang.String",
+      "description": "Application mode: 'standalone' or 'scdf'",
+      "defaultValue": "standalone"
+    },
+    {
+      "name": "hdfswatcher.output-binding",
+      "type": "java.lang.String",
+      "description": "Output binding name for Spring Cloud Stream",
+      "defaultValue": "output"
+    },
+    {
+      "name": "hdfswatcher.webhdfs-uri",
+      "type": "java.lang.String",
+      "description": "WebHDFS URI (e.g., http://localhost:50070)",
+      "defaultValue": ""
+    }
+  ]
+}

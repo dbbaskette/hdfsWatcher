@@ -1,36 +1,71 @@
 package com.baskettecase.hdfsWatcher;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.*;
-
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.RemoteIterator;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+// Paths used via fully qualified name
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
 @Service
 public class HdfsWatcherService {
     private final HdfsWatcherProperties properties;
-    private FileSystem fileSystem;
+    private final FileSystem fileSystem;
     private final Set<String> seenFiles = new HashSet<>();
     private final HdfsWatcherOutput output;
+    private final boolean pseudoop;
+    private final java.nio.file.Path localWatchPath;
 
     public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output) throws Exception {
         this.properties = properties;
         this.output = output;
-        Configuration conf = new Configuration();
-        conf.set("fs.defaultFS", properties.getHdfsUri());
-        fileSystem = FileSystem.get(new URI(properties.getHdfsUri()), conf, properties.getHdfsUser());
+        this.pseudoop = properties.isPseudoop();
+        
+        if (this.pseudoop) {
+            // In pseudoop mode, use local file system
+            this.localWatchPath = java.nio.file.Paths.get(properties.getLocalStoragePath());
+            Files.createDirectories(localWatchPath);
+            this.fileSystem = null;
+        } else {
+            // In HDFS mode
+            this.localWatchPath = null;
+            Configuration conf = new Configuration();
+            conf.set("fs.defaultFS", properties.getHdfsUri());
+            this.fileSystem = FileSystem.get(
+                new URI(properties.getHdfsUri()), 
+                conf, 
+                properties.getHdfsUser()
+            );
+        }
+        // FileSystem is now initialized in the constructor based on the mode
     }
 
     @Scheduled(fixedDelayString = "${hdfswatcher.pollInterval:60}000")
     public void pollHdfsDirectory() {
+        if (pseudoop) {
+            pollLocalDirectory();
+        } else {
+            pollHdfs();
+        }
+    }
+    
+    private void pollHdfs() {
         try {
-            RemoteIterator<LocatedFileStatus> files = fileSystem.listFiles(new Path(properties.getHdfsPath()), false);
+            RemoteIterator<LocatedFileStatus> files = fileSystem.listFiles(
+                new Path(properties.getHdfsPath()), 
+                false
+            );
             while (files.hasNext()) {
                 LocatedFileStatus fileStatus = files.next();
                 String filePath = fileStatus.getPath().toString();
@@ -43,8 +78,25 @@ public class HdfsWatcherService {
             System.err.println("Error polling HDFS directory: " + e.getMessage());
         }
     }
+    
+    private void pollLocalDirectory() {
+        try (Stream<java.nio.file.Path> stream = Files.list(localWatchPath)) {
+            stream.filter(Files::isRegularFile)
+                  .forEach(file -> {
+                      String filePath = file.toString();
+                      if (seenFiles.add(filePath)) {
+                          String fileName = file.getFileName().toString();
+                          String fileUrl = String.format("http://localhost:8080/files/%s", 
+                              URLEncoder.encode(fileName, StandardCharsets.UTF_8));
+                          output.send(fileUrl, properties.getMode());
+                      }
+                  });
+        } catch (IOException e) {
+            System.err.println("Error polling local directory: " + e.getMessage());
+        }
+    }
 
-    private String buildWebHdfsUrl(Path path) {
+    private String buildWebHdfsUrl(org.apache.hadoop.fs.Path path) {
         String baseUri = properties.getWebhdfsUri();
         if (baseUri == null || baseUri.isEmpty()) {
             // Fallback to hdfsUri logic for backward compatibility
