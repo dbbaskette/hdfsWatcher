@@ -11,33 +11,42 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class HdfsWatcherApplication {
     public static void main(String[] args) {
         SpringApplication app = new SpringApplication(HdfsWatcherApplication.class);
-        
-        // Configure web application type based on profile or properties
         app.setBannerMode(Banner.Mode.OFF);
-        
-        // Default to no web server
         WebApplicationType webAppType = WebApplicationType.NONE;
-        
-        // Check if we should enable web server for pseudoop mode
+
+        // Check if pseudoop mode is enabled to determine WebApplicationType
+        // This logic checks environment variables first, then command-line arguments
+        boolean isPseudoopEnabled = false;
         String pseudoopEnv = System.getenv("HDFSWATCHER_PSEUDOOP");
         if (pseudoopEnv != null && (pseudoopEnv.equalsIgnoreCase("true") || pseudoopEnv.equals("1"))) {
-            webAppType = WebApplicationType.SERVLET;
-        }
-        
-        // Check command line args for --hdfswatcher.pseudoop=true
-        for (String arg : args) {
-            if (arg.startsWith("--hdfswatcher.pseudoop=")) {
-                String value = arg.substring("--hdfswatcher.pseudoop=".length()).toLowerCase();
-                if (value.equals("true") || value.equals("1")) {
-                    webAppType = WebApplicationType.SERVLET;
-                    break;
+            isPseudoopEnabled = true;
+        } else {
+            for (String arg : args) {
+                if (arg.startsWith("--hdfswatcher.pseudoop=")) {
+                    String value = arg.substring("--hdfswatcher.pseudoop=".length()).toLowerCase();
+                    if (value.equals("true") || value.equals("1")) {
+                        isPseudoopEnabled = true;
+                        break;
+                    }
                 }
+                // Also check for hdfswatcher.pseudoop (Spring Boot property format)
+                 if (arg.startsWith("hdfswatcher.pseudoop=")) { // Note: Spring Boot converts this to hdfswatcher.pseudoop internally
+                    String value = arg.substring("hdfswatcher.pseudoop=".length()).toLowerCase();
+                     if (value.equals("true") || value.equals("1")) {
+                        isPseudoopEnabled = true;
+                        break;
+                    }
+                 }
             }
         }
         
+        if(isPseudoopEnabled){
+            webAppType = WebApplicationType.SERVLET;
+        }
+
         app.setWebApplicationType(webAppType);
         var ctx = app.run(args);
-        // Print out all configured properties
+        
         var props = ctx.getBean(com.baskettecase.hdfsWatcher.HdfsWatcherProperties.class);
         System.out.println("[HdfsWatcher] Application Properties:");
         System.out.println("  mode          : " + props.getMode());
@@ -55,22 +64,22 @@ public class HdfsWatcherApplication {
         System.out.println("  webhdfsUri    : " + props.getWebhdfsUri() + " [env: " + (envWebhdfsUri != null ? envWebhdfsUri : "not set") + "]");
         // Print the actual SCDF destination if available
         String bindingName = props.getOutputBinding();
-        String scdfDestKey = "spring.cloud.stream.bindings." + bindingName.replace("-out-0", "") + ".destination";
+        String scdfDestKey = "spring.cloud.stream.bindings." + bindingName + ".destination"; // Simpler key
         String scdfDestValue = ctx.getEnvironment().getProperty(scdfDestKey);
-        if (scdfDestValue == null) {
-            // Try with the full binding name as fallback
-            scdfDestKey = "spring.cloud.stream.bindings." + bindingName + ".destination";
-            scdfDestValue = ctx.getEnvironment().getProperty(scdfDestKey);
+        if (scdfDestValue == null && bindingName.endsWith("-out-0")) { // Fallback for common pattern
+             scdfDestKey = "spring.cloud.stream.bindings." + bindingName.replace("-out-0", "") + ".destination";
+             scdfDestValue = ctx.getEnvironment().getProperty(scdfDestKey);
         }
         System.out.println("  output destination: " + (scdfDestValue != null ? scdfDestValue : "[not set]"));
         
-        // Print pseudoop status
         System.out.println("  pseudoop mode   : " + props.isPseudoop());
-        if (props.isPseudoop()) {
+        if (props.isPseudoop()) { // Use the bean's value for definitive status
+             if (webAppType == WebApplicationType.NONE && props.isPseudoop()) { // Check if webapptype was correctly set
+                 System.out.println("  [WARNING] Pseudoop mode is active but WebApplicationType was NONE. Web UI might not be available if Spring Boot didn't override or if HDFSWATCHER_PSEUDOOP was not set early enough.");
+            }
             System.out.println("  local storage   : " + props.getLocalStoragePath());
-            System.out.println("  web interface   : http://localhost:" + 
-                ctx.getEnvironment().getProperty("server.port", "8080") + "/"
-            );
+            // Use the publicAppUri from HdfsWatcherProperties
+            System.out.println("  web interface   : " + props.getPublicAppUri() + "/");
         }
     }
 }

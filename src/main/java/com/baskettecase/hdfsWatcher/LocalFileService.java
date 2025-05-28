@@ -1,6 +1,5 @@
 package com.baskettecase.hdfsWatcher;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -10,7 +9,10 @@ import org.springframework.web.multipart.MultipartFile;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -22,11 +24,10 @@ import java.util.stream.Stream;
 @Service
 public class LocalFileService {
     private final Path rootLocation;
-    
-    @Value("${server.port:8080}")
-    private int serverPort;
+    private final HdfsWatcherProperties properties; // Inject properties
 
     public LocalFileService(HdfsWatcherProperties properties) {
+        this.properties = properties; // Store injected properties
         this.rootLocation = Paths.get(properties.getLocalStoragePath());
     }
 
@@ -40,24 +41,30 @@ public class LocalFileService {
     }
 
     public String store(MultipartFile file) {
-        String filename = StringUtils.cleanPath(file.getOriginalFilename());
+        String originalFilename = StringUtils.cleanPath(file.getOriginalFilename());
         try {
             if (file.isEmpty()) {
-                throw new RuntimeException("Failed to store empty file " + filename);
+                throw new RuntimeException("Failed to store empty file " + originalFilename);
             }
-            if (filename.contains("..")) {
+            if (originalFilename.contains("..")) {
                 // Security check
-                throw new RuntimeException("Cannot store file with relative path outside current directory " + filename);
+                throw new RuntimeException("Cannot store file with relative path outside current directory " + originalFilename);
             }
             try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, this.rootLocation.resolve(filename),
+                Files.copy(inputStream, this.rootLocation.resolve(originalFilename),
                     StandardCopyOption.REPLACE_EXISTING);
                 
-                // Return the URL to access the file
-                return String.format("http://localhost:%d/files/%s", serverPort, filename);
+                // URL-encode the filename for use in the path segment
+                String encodedFilename = URLEncoder.encode(originalFilename, StandardCharsets.UTF_8.toString());
+                
+                // Return the public URL to access the file
+                return String.format("%s/files/%s", properties.getPublicAppUri(), encodedFilename);
             }
+        } catch (UnsupportedEncodingException e) {
+            // This should not happen with UTF-8
+            throw new RuntimeException("Failed to encode filename " + originalFilename, e);
         } catch (IOException e) {
-            throw new RuntimeException("Failed to store file " + filename, e);
+            throw new RuntimeException("Failed to store file " + originalFilename, e);
         }
     }
 

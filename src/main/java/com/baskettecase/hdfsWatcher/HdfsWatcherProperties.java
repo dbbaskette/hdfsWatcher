@@ -1,7 +1,15 @@
 package com.baskettecase.hdfsWatcher;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct; // For Spring Boot 3+
+
+import java.util.List;
+import java.util.Map;
 
 @Configuration
 @ConfigurationProperties(prefix = "hdfswatcher")
@@ -47,6 +55,57 @@ public class HdfsWatcherProperties {
      * Local storage path for pseudo-operational mode
      */
     private String localStoragePath = "/tmp/hdfsWatcher";
+
+    // Add this field
+    private String publicAppUri;
+
+    @Autowired
+    private transient Environment environment; // Used to access environment variables
+
+    @PostConstruct
+    public void init() {
+        // 1. Check for an explicitly set public URI via environment variable
+        this.publicAppUri = environment.getProperty("HDFSWATCHER_PUBLIC_APP_URI");
+
+        // 2. If not set, try to derive from VCAP_APPLICATION (Cloud Foundry)
+        if (this.publicAppUri == null) {
+            String vcapApplicationJson = environment.getProperty("VCAP_APPLICATION");
+            if (vcapApplicationJson != null) {
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    Map<String, Object> vcapMap = mapper.readValue(vcapApplicationJson, new TypeReference<Map<String, Object>>() {});
+                    @SuppressWarnings("unchecked")
+                    List<String> uris = (List<String>) vcapMap.get("application_uris");
+                    if (uris != null && !uris.isEmpty()) {
+                        // Assuming CF uses HTTPS and takes the first URI
+                        this.publicAppUri = "https://" + uris.get(0);
+                    }
+                } catch (Exception e) {
+                    System.err.println("[HdfsWatcherProperties] ERROR parsing VCAP_APPLICATION: " + e.getMessage());
+                    // Fall through to default if parsing fails
+                }
+            }
+        }
+
+        // 3. Default to localhost for local development if still not set
+        if (this.publicAppUri == null) {
+            String serverPort = environment.getProperty("server.port", "8080"); // Get server port
+            this.publicAppUri = "http://localhost:" + serverPort;
+        }
+        System.out.println("[HdfsWatcherProperties] Determined publicAppUri: " + this.publicAppUri);
+    }
+
+    // Getter for the publicAppUri
+    public String getPublicAppUri() {
+        if (publicAppUri == null) {
+            // Fallback in case init() hasn't run or environment is not available (e.g., certain test scenarios)
+            // This should ideally not be hit in a running CF app.
+            String serverPort = environment != null ? environment.getProperty("server.port", "8080") : "8080";
+            System.err.println("[HdfsWatcherProperties] WARNING: publicAppUri was not initialized by PostConstruct. Falling back to default http://localhost:" + serverPort);
+            return "http://localhost:" + serverPort;
+        }
+        return publicAppUri;
+    }
 
     public String getOutputBinding() { return outputBinding; }
     

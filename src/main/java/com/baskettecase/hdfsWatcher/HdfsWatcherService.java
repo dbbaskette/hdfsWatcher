@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -48,7 +49,6 @@ public class HdfsWatcherService {
                 properties.getHdfsUser()
             );
         }
-        // FileSystem is now initialized in the constructor based on the mode
     }
 
     @Scheduled(fixedDelayString = "${hdfswatcher.pollInterval:60}000")
@@ -86,9 +86,17 @@ public class HdfsWatcherService {
                       String filePath = file.toString();
                       if (seenFiles.add(filePath)) {
                           String fileName = file.getFileName().toString();
-                          String fileUrl = String.format("http://localhost:8080/files/%s", 
-                              URLEncoder.encode(fileName, StandardCharsets.UTF_8));
-                          output.send(fileUrl, properties.getMode());
+                          try {
+                              String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString());
+                              // Use the publicAppUri from HdfsWatcherProperties
+                              String fileUrl = String.format("%s/files/%s", 
+                                  properties.getPublicAppUri(), 
+                                  encodedFileName);
+                              output.send(fileUrl, properties.getMode());
+                          } catch (UnsupportedEncodingException e) {
+                              // This should not happen with UTF-8
+                              System.err.println("Error encoding filename for local poll: " + e.getMessage());
+                          }
                       }
                   });
         } catch (IOException e) {
