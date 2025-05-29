@@ -59,7 +59,8 @@
                         <ul class="divide-y divide-gray-200" id="fileList">
                             <li th:each="file : ${files}" class="px-4 py-3 hover:bg-gray-100 flex justify-between items-center">
                                 <span class="text-sm font-medium text-gray-900 truncate" th:text="${file}"></span>
-                                <a th:href="'/' + ${file}" class="text-blue-600 hover:text-blue-800 text-sm font-medium" download>Download</a>
+                                <!-- <a th:href="'/' + ${file}" class="text-blue-600 hover:text-blue-800 text-sm font-medium" download>Download</a> -->
+                                <a th:href="'/files/' + ${file}" class="text-blue-600 hover:text-blue-800 text-sm font-medium" download>Download</a>
                             </li>
                             <li th:if="${#lists.isEmpty(files)}" class="px-4 py-3 text-gray-500 text-sm">
                                 No files uploaded yet.
