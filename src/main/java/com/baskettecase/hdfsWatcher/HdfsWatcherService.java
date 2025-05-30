@@ -87,7 +87,12 @@ public class HdfsWatcherService {
                       if (seenFiles.add(filePath)) {
                           String fileName = file.getFileName().toString();
                           try {
-                              String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString());
+                                  // Encode the file name with proper URL encoding
+                              // First encode with URLEncoder, then replace + with %20 for URL compatibility
+                              String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.toString())
+                                  .replace("+", "%20")
+                                  .replace("(", "%28")
+                                  .replace(")", "%29");
                               // Use the publicAppUri from HdfsWatcherProperties
                               String fileUrl = String.format("%s/files/%s", 
                                   properties.getPublicAppUri(), 
