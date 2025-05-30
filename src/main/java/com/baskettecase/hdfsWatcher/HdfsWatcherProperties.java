@@ -78,7 +78,7 @@ public class HdfsWatcherProperties {
                     List<String> uris = (List<String>) vcapMap.get("application_uris");
                     if (uris != null && !uris.isEmpty()) {
                         // Assuming CF uses HTTPS and takes the first URI
-                        this.publicAppUri = "https://" + uris.get(0);
+                        this.publicAppUri = "https://" + uris.get(0).toLowerCase();
                     }
                 } catch (Exception e) {
                     System.err.println("[HdfsWatcherProperties] ERROR parsing VCAP_APPLICATION: " + e.getMessage());
@@ -87,10 +87,25 @@ public class HdfsWatcherProperties {
             }
         }
 
+
         // 3. Default to localhost for local development if still not set
         if (this.publicAppUri == null) {
             String serverPort = environment.getProperty("server.port", "8080"); // Get server port
             this.publicAppUri = "http://localhost:" + serverPort;
+        } else {
+            // Ensure the hostname part is lowercase
+            try {
+                java.net.URI uri = new java.net.URI(this.publicAppUri);
+                String host = uri.getHost();
+                if (host != null) {
+                    String newHost = host.toLowerCase();
+                    if (!host.equals(newHost)) {
+                        this.publicAppUri = this.publicAppUri.replace(host, newHost);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[HdfsWatcherProperties] WARNING: Could not parse publicAppUri for case normalization: " + e.getMessage());
+            }
         }
         System.out.println("[HdfsWatcherProperties] Determined publicAppUri: " + this.publicAppUri);
     }
