@@ -55,11 +55,17 @@ public class FileUploadController {
     @GetMapping("/files/{filename:.+}")
     @ResponseBody
     public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
+        String decodedFilename;
+        try {
+            decodedFilename = java.net.URLDecoder.decode(filename, java.nio.charset.StandardCharsets.UTF_8.toString());
+        } catch (Exception e) {
+            decodedFilename = filename; // fallback
+        }
         Resource file;
         if (properties.isPseudoop()) {
-            file = webHdfsService.downloadFile(filename);
+            file = webHdfsService.downloadFile(decodedFilename);
         } else {
-            file = storageService.loadAsResource(filename);
+            file = storageService.loadAsResource(decodedFilename);
         }
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"" + file.getFilename() + "\"").body(file);
@@ -77,7 +83,9 @@ public class FileUploadController {
                 String user = properties.getHdfsUser();
                 baseUrl = baseUrl.replaceAll("/+$", "");
                 if (!hdfsPath.startsWith("/")) hdfsPath = "/" + hdfsPath;
-                publicUrl = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, encodedFilename, user);
+                // DOUBLE-ENCODE for Hadoop WebHDFS
+                String doubleEncodedFilename = java.net.URLEncoder.encode(encodedFilename, java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
+                publicUrl = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, doubleEncodedFilename, user);
             } else {
                 storageService.store(file);
                 String publicAppUri = properties.getPublicAppUri();
