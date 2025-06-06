@@ -2,6 +2,7 @@ package com.baskettecase.hdfsWatcher;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.buffer.DataBufferUtils;
@@ -22,7 +23,6 @@ public class WebHdfsService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Autowired
     public WebHdfsService(HdfsWatcherProperties properties) {
         this.properties = properties;
         this.restTemplate = new RestTemplate();
@@ -77,8 +77,11 @@ public class WebHdfsService {
             }
             String location = response.getHeaders().getLocation().toString();
 
-            // 2. Upload file data to redirected location
-            HttpEntity<byte[]> fileEntity = new HttpEntity<>(file.getBytes(), headers);
+            // 2. Upload file data to redirected location (streaming, not buffering)
+            InputStreamResource resource = new InputStreamResource(file.getInputStream());
+            HttpHeaders fileHeaders = new HttpHeaders();
+            fileHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            HttpEntity<InputStreamResource> fileEntity = new HttpEntity<>(resource, fileHeaders);
             ResponseEntity<String> uploadResp = restTemplate.exchange(location, HttpMethod.PUT, fileEntity, String.class);
             if (!uploadResp.getStatusCode().is2xxSuccessful()) {
                 throw new RuntimeException("WebHDFS file upload failed: " + uploadResp.getStatusCode());
