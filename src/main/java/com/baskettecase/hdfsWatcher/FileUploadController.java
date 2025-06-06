@@ -29,8 +29,15 @@ public class FileUploadController {
     @GetMapping("/")
     public String listUploadedFiles(Model model) {
         List<String> files;
+        boolean hdfsDisconnected = false;
         if (properties.isPseudoop()) {
-            files = webHdfsService.listFiles();
+            try {
+                files = webHdfsService.listFiles();
+            } catch (Exception e) {
+                files = List.of();
+                hdfsDisconnected = true;
+                model.addAttribute("message", "HDFS is disconnected: " + e.getMessage());
+            }
         } else {
             files = storageService.loadAll()
                 .map(path -> path.getFileName().toString())
@@ -38,6 +45,7 @@ public class FileUploadController {
         }
         model.addAttribute("files", files);
         model.addAttribute("isPseudoop", properties.isPseudoop());
+        model.addAttribute("hdfsDisconnected", hdfsDisconnected);
         return "uploadForm";
     }
 

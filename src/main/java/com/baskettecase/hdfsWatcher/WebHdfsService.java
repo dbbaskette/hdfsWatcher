@@ -32,7 +32,17 @@ public class WebHdfsService {
         String baseUrl = properties.getWebhdfsUri();
         String hdfsPath = properties.getHdfsPath();
         String user = properties.getHdfsUser();
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            throw new IllegalStateException("hdfswatcher.webhdfs-uri is not set or empty");
+        }
+        if (hdfsPath == null || hdfsPath.isEmpty()) {
+            throw new IllegalStateException("hdfswatcher.hdfs-path is not set or empty");
+        }
+        // Ensure baseUrl does not end with slash, hdfsPath does start with slash
+        baseUrl = baseUrl.replaceAll("/+$", "");
+        if (!hdfsPath.startsWith("/")) hdfsPath = "/" + hdfsPath;
         String url = String.format("%s/webhdfs/v1%s?op=LISTSTATUS&user.name=%s", baseUrl, hdfsPath, user);
+        System.out.println("[WebHdfsService] Listing files from URL: " + url);
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             if (response.getStatusCode().is2xxSuccessful()) {

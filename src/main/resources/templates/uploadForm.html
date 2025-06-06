@@ -54,8 +54,11 @@
 
                 <!-- File List -->
                 <div class="mt-8">
-                    <h2 class="text-lg font-medium text-gray-900 mb-4">Uploaded Files</h2>
-                    <div class="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                    <div th:if="${hdfsDisconnected}" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
+                        <span class="block sm:inline">HDFS is disconnected. File list is unavailable.</span>
+                    </div>
+                    <h2 class="text-lg font-medium text-gray-900 mb-4" th:if="${!hdfsDisconnected}">Uploaded Files</h2>
+                    <div class="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden" th:if="${!hdfsDisconnected}">
                         <ul class="divide-y divide-gray-200" id="fileList">
                             <li th:each="file : ${files}" class="px-4 py-3 hover:bg-gray-100 flex justify-between items-center">
                                 <span class="text-sm font-medium text-gray-900 truncate" th:text="${file}"></span>
