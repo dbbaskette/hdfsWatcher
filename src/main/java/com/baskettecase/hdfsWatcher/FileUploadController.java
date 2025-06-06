@@ -69,13 +69,20 @@ public class FileUploadController {
     public String handleFileUpload(@RequestParam("file") MultipartFile file, Model model) {
         try {
             String encodedFilename = java.net.URLEncoder.encode(file.getOriginalFilename(), java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
-            String publicAppUri = properties.getPublicAppUri();
+            String publicUrl;
             if (properties.isPseudoop()) {
                 webHdfsService.uploadFile(file);
+                String baseUrl = properties.getWebhdfsUri();
+                String hdfsPath = properties.getHdfsPath();
+                String user = properties.getHdfsUser();
+                baseUrl = baseUrl.replaceAll("/+$", "");
+                if (!hdfsPath.startsWith("/")) hdfsPath = "/" + hdfsPath;
+                publicUrl = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, encodedFilename, user);
             } else {
                 storageService.store(file);
+                String publicAppUri = properties.getPublicAppUri();
+                publicUrl = String.format("%s/files/%s", publicAppUri.replaceAll("/+$", ""), encodedFilename);
             }
-            String publicUrl = String.format("%s/files/%s", publicAppUri.replaceAll("/+$", ""), encodedFilename);
 
             // Always send JSON notification to Rabbit/stream
             output.send(publicUrl, properties.getMode());

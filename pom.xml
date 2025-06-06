@@ -11,7 +11,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.baskettecase</groupId>
     <artifactId>hdfsWatcher</artifactId>
-    <version>0.2.9</version>
+    <version>0.2.10</version>
     <name>hdfsWatcher</name>
     <description>Spring Boot app for watching HDFS and sending file URLs to Spring Cloud Data Flow</description>
     <properties>
