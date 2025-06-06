@@ -17,13 +17,16 @@ public class FileUploadController {
     private final LocalFileService storageService;
     private final HdfsWatcherProperties properties;
     private final WebHdfsService webHdfsService;
+    private final HdfsWatcherOutput output;
 
     public FileUploadController(LocalFileService storageService, 
                               HdfsWatcherProperties properties,
-                              WebHdfsService webHdfsService) {
+                              WebHdfsService webHdfsService,
+                              HdfsWatcherOutput output) {
         this.storageService = storageService;
         this.properties = properties;
         this.webHdfsService = webHdfsService;
+        this.output = output;
     }
 
     @GetMapping("/")
@@ -65,11 +68,22 @@ public class FileUploadController {
     @PostMapping("/")
     public String handleFileUpload(@RequestParam("file") MultipartFile file, Model model) {
         try {
+            String publicUrl;
             if (properties.isPseudoop()) {
                 webHdfsService.uploadFile(file);
+                // Build a WebHDFS public URL for the uploaded file
+                String baseUrl = properties.getWebhdfsUri();
+                String hdfsPath = properties.getHdfsPath();
+                String user = properties.getHdfsUser();
+                String encodedFilename = java.net.URLEncoder.encode(file.getOriginalFilename(), java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
+                baseUrl = baseUrl.replaceAll("/+$", "");
+                if (!hdfsPath.startsWith("/")) hdfsPath = "/" + hdfsPath;
+                publicUrl = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, encodedFilename, user);
             } else {
-                storageService.store(file);
+                publicUrl = storageService.store(file);
             }
+            // Always send JSON notification to Rabbit/stream
+            output.send(publicUrl, properties.getMode());
             model.addAttribute("message", 
                 "You successfully uploaded " + file.getOriginalFilename() + "!");
             return "redirect:/";
