@@ -16,26 +16,26 @@ public class FileUploadController {
 
     private final LocalFileService storageService;
     private final HdfsWatcherProperties properties;
-    // HdfsWatcherOutput is no longer strictly needed here if we remove the direct send,
-    // but keeping it doesn't harm if other methods might use it (though none currently do).
-    // For this specific change, 'output' field and constructor param can be removed if not used elsewhere.
-    // For now, let's assume it might be used later and just comment out its usage.
-    // private final HdfsWatcherOutput output; // Optionally remove if no other uses
+    private final WebHdfsService webHdfsService;
 
     public FileUploadController(LocalFileService storageService, 
                               HdfsWatcherProperties properties,
-                              HdfsWatcherOutput output) { // 'output' can be removed from constructor if field is removed
+                              WebHdfsService webHdfsService) {
         this.storageService = storageService;
         this.properties = properties;
-        // this.output = output; // Optionally remove
+        this.webHdfsService = webHdfsService;
     }
 
     @GetMapping("/")
     public String listUploadedFiles(Model model) {
-        List<String> files = storageService.loadAll()
-            .map(path -> path.getFileName().toString()) // Changed to getFileName() for consistency with what users see. Path.toString() on relativized path is fine too.
-            .collect(Collectors.toList());
-            
+        List<String> files;
+        if (properties.isPseudoop()) {
+            files = webHdfsService.listFiles();
+        } else {
+            files = storageService.loadAll()
+                .map(path -> path.getFileName().toString())
+                .collect(Collectors.toList());
+        }
         model.addAttribute("files", files);
         model.addAttribute("isPseudoop", properties.isPseudoop());
         return "uploadForm";
@@ -52,26 +52,16 @@ public class FileUploadController {
     @PostMapping("/")
     public String handleFileUpload(@RequestParam("file") MultipartFile file, Model model) {
         try {
-            // The store method saves the file and returns its public URL.
-            // We don't need the URL in the controller anymore if we're not sending from here.
-            storageService.store(file); 
-            
-            // The HdfsWatcherService will now be solely responsible for detecting 
-            // this new file during its polling cycle and sending the message.
-            // --- REMOVE THE FOLLOWING BLOCK ---
-            // if (properties.isPseudoop()) {
-            //     output.send(fileUrl, properties.getMode());
-            // }
-            // --- END OF REMOVED BLOCK ---
-            
+            if (properties.isPseudoop()) {
+                webHdfsService.uploadFile(file);
+            } else {
+                storageService.store(file);
+            }
             model.addAttribute("message", 
                 "You successfully uploaded " + file.getOriginalFilename() + "!");
-                
             return "redirect:/";
         } catch (Exception e) {
-            model.addAttribute("message", "Failed to upload file: " + file.getOriginalFilename() + ". Error: " + e.getMessage()); // Provide more context on error
-            // Consider adding 'error' to model and checking in Thymeleaf for better display
-            // For now, keep redirect but include error in message (or use flash attributes for robust error display on redirect)
+            model.addAttribute("message", "Failed to upload file: " + file.getOriginalFilename() + ". Error: " + e.getMessage());
             return "redirect:/";
         }
     }
