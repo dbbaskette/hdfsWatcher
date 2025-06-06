@@ -92,4 +92,34 @@ public class WebHdfsService {
             throw new RuntimeException("Failed to upload file to WebHDFS", e);
         }
     }
+
+    public Resource downloadFile(String filename) {
+        String baseUrl = properties.getWebhdfsUri();
+        String hdfsPath = properties.getHdfsPath();
+        String user = properties.getHdfsUser();
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            throw new IllegalStateException("hdfswatcher.webhdfs-uri is not set or empty");
+        }
+        if (hdfsPath == null || hdfsPath.isEmpty()) {
+            throw new IllegalStateException("hdfswatcher.hdfs-path is not set or empty");
+        }
+        baseUrl = baseUrl.replaceAll("/+$", "");
+        if (!hdfsPath.startsWith("/")) hdfsPath = "/" + hdfsPath;
+        String url = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, filename, user);
+        try {
+            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                return new org.springframework.core.io.ByteArrayResource(response.getBody()) {
+                    @Override
+                    public String getFilename() {
+                        return filename;
+                    }
+                };
+            } else {
+                throw new RuntimeException("WebHDFS OPEN failed: " + response.getStatusCode());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download file from WebHDFS", e);
+        }
+    }
 }
