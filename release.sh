@@ -69,7 +69,11 @@ echo "pom.xml updated."
 git add pom.xml
 
 git add .
-git commit -m "Release v$new_version"
+read -p "Enter commit message: " commit_msg
+if [ -z "$commit_msg" ]; then
+  commit_msg="Release v$new_version"
+fi
+git commit -m "$commit_msg"
 git push
 
 echo "Code committed and pushed."
