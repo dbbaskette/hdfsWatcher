@@ -74,7 +74,7 @@ public class FileUploadController {
     @PostMapping("/")
     public String handleFileUpload(@RequestParam("file") MultipartFile file, Model model) {
         try {
-            String encodedFilename = java.net.URLEncoder.encode(file.getOriginalFilename(), java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
+            String originalFilename = file.getOriginalFilename();
             String publicUrl;
             if (properties.isPseudoop()) {
                 webHdfsService.uploadFile(file);
@@ -83,12 +83,13 @@ public class FileUploadController {
                 String user = properties.getHdfsUser();
                 baseUrl = baseUrl.replaceAll("/+$", "");
                 if (!hdfsPath.startsWith("/")) hdfsPath = "/" + hdfsPath;
-                // DOUBLE-ENCODE for Hadoop WebHDFS
-                String doubleEncodedFilename = java.net.URLEncoder.encode(encodedFilename, java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
-                publicUrl = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, doubleEncodedFilename, user);
+                // Encode only for the URL, not for storage
+                String encodedFilename = java.net.URLEncoder.encode(originalFilename, java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
+                publicUrl = String.format("%s/webhdfs/v1%s/%s?op=OPEN&user.name=%s", baseUrl, hdfsPath, encodedFilename, user);
             } else {
                 storageService.store(file);
                 String publicAppUri = properties.getPublicAppUri();
+                String encodedFilename = java.net.URLEncoder.encode(originalFilename, java.nio.charset.StandardCharsets.UTF_8.toString()).replace("+", "%20");
                 publicUrl = String.format("%s/files/%s", publicAppUri.replaceAll("/+$", ""), encodedFilename);
             }
 
