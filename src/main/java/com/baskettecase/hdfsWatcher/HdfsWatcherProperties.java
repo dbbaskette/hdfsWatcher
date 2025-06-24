@@ -1,19 +1,27 @@
 package com.baskettecase.hdfsWatcher;
 
+import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct; // For Spring Boot 3+
+import jakarta.annotation.PostConstruct;
 
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Configuration properties for HDFS Watcher with proper logging and validation.
+ */
 @Configuration
 @ConfigurationProperties(prefix = "hdfswatcher")
 public class HdfsWatcherProperties {
+    
+    private static final Logger logger = LoggerFactory.getLogger(HdfsWatcherProperties.class);
     /**
      * WebHDFS REST API base URI, e.g. http://hadoop-hdfs-service:9870
      * If set, this will be used to generate WebHDFS URLs instead of hdfsUri.
@@ -64,60 +72,101 @@ public class HdfsWatcherProperties {
 
     @PostConstruct
     public void init() {
+        logger.debug("Initializing HdfsWatcherProperties");
+        
         // 1. Check for an explicitly set public URI via environment variable
-        this.publicAppUri = environment.getProperty("HDFSWATCHER_PUBLIC_APP_URI");
+        this.publicAppUri = environment.getProperty(HdfsWatcherConstants.ENV_HDFSWATCHER_PUBLIC_APP_URI);
 
         // 2. If not set, try to derive from VCAP_APPLICATION (Cloud Foundry)
         if (this.publicAppUri == null) {
-            String vcapApplicationJson = environment.getProperty("VCAP_APPLICATION");
-            if (vcapApplicationJson != null) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    Map<String, Object> vcapMap = mapper.readValue(vcapApplicationJson, new TypeReference<Map<String, Object>>() {});
-                    @SuppressWarnings("unchecked")
-                    List<String> uris = (List<String>) vcapMap.get("application_uris");
-                    if (uris != null && !uris.isEmpty()) {
-                        // Assuming CF uses HTTPS and takes the first URI
-                        this.publicAppUri = "https://" + uris.get(0).toLowerCase();
-                    }
-                } catch (Exception e) {
-                    System.err.println("[HdfsWatcherProperties] ERROR parsing VCAP_APPLICATION: " + e.getMessage());
-                    // Fall through to default if parsing fails
-                }
-            }
+            this.publicAppUri = determinePublicUriFromVcap();
         }
-
 
         // 3. Default to localhost for local development if still not set
         if (this.publicAppUri == null) {
-            String serverPort = environment.getProperty("server.port", "8080"); // Get server port
-            this.publicAppUri = "http://localhost:" + serverPort;
+            this.publicAppUri = buildDefaultLocalUri();
         } else {
             // Ensure the hostname part is lowercase
+            this.publicAppUri = normalizeHostname(this.publicAppUri);
+        }
+        
+        logger.info("{} Determined publicAppUri: {}", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, this.publicAppUri);
+    }
+    
+    /**
+     * Determines public URI from VCAP_APPLICATION environment variable.
+     */
+    private String determinePublicUriFromVcap() {
+        String vcapApplicationJson = environment.getProperty(HdfsWatcherConstants.ENV_VCAP_APPLICATION);
+        if (vcapApplicationJson != null) {
             try {
-                java.net.URI uri = new java.net.URI(this.publicAppUri);
-                String host = uri.getHost();
-                if (host != null) {
-                    String newHost = host.toLowerCase();
-                    if (!host.equals(newHost)) {
-                        this.publicAppUri = this.publicAppUri.replace(host, newHost);
-                    }
+                ObjectMapper mapper = new ObjectMapper();
+                Map<String, Object> vcapMap = mapper.readValue(vcapApplicationJson, new TypeReference<Map<String, Object>>() {});
+                @SuppressWarnings("unchecked")
+                List<String> uris = (List<String>) vcapMap.get("application_uris");
+                if (uris != null && !uris.isEmpty()) {
+                    // Assuming CF uses HTTPS and takes the first URI
+                    String uri = HdfsWatcherConstants.HTTPS_SCHEME + uris.get(0).toLowerCase();
+                    logger.debug("Derived public URI from VCAP_APPLICATION: {}", uri);
+                    return uri;
                 }
             } catch (Exception e) {
-                System.err.println("[HdfsWatcherProperties] WARNING: Could not parse publicAppUri for case normalization: " + e.getMessage());
+                logger.error("{} ERROR parsing VCAP_APPLICATION", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, e);
+                // Fall through to default if parsing fails
             }
         }
-        System.out.println("[HdfsWatcherProperties] Determined publicAppUri: " + this.publicAppUri);
+        return null;
+    }
+    
+    /**
+     * Builds default local URI for development.
+     */
+    private String buildDefaultLocalUri() {
+        String serverPort = environment.getProperty(HdfsWatcherConstants.PROP_SERVER_PORT, 
+            String.valueOf(HdfsWatcherConstants.DEFAULT_SERVER_PORT));
+        String uri = HdfsWatcherConstants.HTTP_SCHEME + "localhost:" + serverPort;
+        logger.debug("Using default local URI: {}", uri);
+        return uri;
+    }
+    
+    /**
+     * Normalizes hostname to lowercase.
+     */
+    private String normalizeHostname(String uri) {
+        try {
+            java.net.URI parsedUri = new java.net.URI(uri);
+            String host = parsedUri.getHost();
+            if (host != null) {
+                String newHost = host.toLowerCase();
+                if (!host.equals(newHost)) {
+                    uri = uri.replace(host, newHost);
+                    logger.debug("Normalized hostname in URI: {}", uri);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("{} Could not parse publicAppUri for case normalization: {}", 
+                HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, uri, e);
+        }
+        return uri;
     }
 
-    // Getter for the publicAppUri
+    /**
+     * Gets the public application URI with fallback handling.
+     * 
+     * @return the public application URI
+     */
     public String getPublicAppUri() {
         if (publicAppUri == null) {
             // Fallback in case init() hasn't run or environment is not available (e.g., certain test scenarios)
-            // This should ideally not be hit in a running CF app.
-            String serverPort = environment != null ? environment.getProperty("server.port", "8080") : "8080";
-            System.err.println("[HdfsWatcherProperties] WARNING: publicAppUri was not initialized by PostConstruct. Falling back to default http://localhost:" + serverPort);
-            return "http://localhost:" + serverPort;
+            String serverPort = environment != null ? 
+                environment.getProperty(HdfsWatcherConstants.PROP_SERVER_PORT, 
+                    String.valueOf(HdfsWatcherConstants.DEFAULT_SERVER_PORT)) : 
+                String.valueOf(HdfsWatcherConstants.DEFAULT_SERVER_PORT);
+                
+            String fallbackUri = HdfsWatcherConstants.HTTP_SCHEME + "localhost:" + serverPort;
+            logger.warn("{} publicAppUri was not initialized by PostConstruct. Falling back to default: {}", 
+                HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, fallbackUri);
+            return fallbackUri;
         }
         return publicAppUri;
     }
