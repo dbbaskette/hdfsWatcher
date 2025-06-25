@@ -1,8 +1,47 @@
 #!/bin/bash
 # release.sh - Increment version in pom.xml, commit, push, and tag release
-# Usage: ./release.sh
+# Usage: ./release.sh [--release VERSION]
+# Examples:
+#   ./release.sh                  # Auto-increment patch version
+#   ./release.sh --release 1.0.2  # Set specific version
 
 set -e
+
+# Parse command line arguments
+RELEASE_VERSION=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --release)
+      RELEASE_VERSION="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--release VERSION]"
+      echo ""
+      echo "Options:"
+      echo "  --release VERSION    Set specific version instead of auto-incrementing"
+      echo "  -h, --help          Show this help message"
+      echo ""
+      echo "Examples:"
+      echo "  $0                    # Auto-increment patch version"
+      echo "  $0 --release 1.0.2    # Set specific version"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Use --help for usage information"
+      exit 1
+      ;;
+  esac
+done
+
+# Validate release version format if provided
+if [[ -n "$RELEASE_VERSION" ]]; then
+  if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: Release version must be in format x.y.z (e.g., 1.0.2)"
+    exit 1
+  fi
+fi
 
 # 1. Get current branch
 git_branch=$(git rev-parse --abbrev-ref HEAD)
@@ -31,15 +70,21 @@ current_version=$(awk '/<artifactId>'"$main_artifact_id"'<\/artifactId>/{getline
 echo "Main artifactId: $main_artifact_id"
 echo "Current version: $current_version"
 
-# 3. Increment patch version (x.y.z -> x.y.$((z+1)))
-IFS='.' read -r major minor patch <<< "$current_version"
-if [[ -z "$patch" ]]; then
-  echo "Could not parse version from pom.xml"
-  exit 1
+# 3. Determine new version
+if [[ -n "$RELEASE_VERSION" ]]; then
+  new_version="$RELEASE_VERSION"
+  echo "Setting version to: $new_version (specified via --release flag)"
+else
+  # Increment patch version (x.y.z -> x.y.$((z+1)))
+  IFS='.' read -r major minor patch <<< "$current_version"
+  if [[ -z "$patch" ]]; then
+    echo "Could not parse version from pom.xml"
+    exit 1
+  fi
+  next_patch=$((patch+1))
+  new_version="$major.$minor.$next_patch"
+  echo "Bumping version to: $new_version (auto-incremented)"
 fi
-next_patch=$((patch+1))
-new_version="$major.$minor.$next_patch"
-echo "Bumping version to: $new_version"
 
 echo -n "Proceed with release v$new_version? [y/N]: "
 read answer
