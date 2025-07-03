@@ -25,11 +25,11 @@
         <!-- Header with Logos -->
         <header class="text-center mb-12">
             <div class="flex justify-center items-center space-x-8 mb-4">
-                <img th:if="${isPseudoop}" th:src="@{/images/hdfswatcher.png}" alt="HDFS Watcher Logo" class="h-24">
+                <img th:src="@{/images/hdfswatcher.png}" alt="HDFS Watcher Logo" class="h-24">
                 <img th:if="${isPseudoop}" th:src="@{/images/pseudoop.png}" alt="Pseudoop Logo" class="h-16">
             </div>
             <h1 class="text-4xl font-bold text-gray-800 mb-2">HDFS Watcher</h1>
-            <p class="text-gray-600">Pseudoop Mode</p>
+            <p class="text-gray-600" th:text="${isPseudoop ? 'Pseudoop Mode' : (mode == 'scdf' ? 'SCDF Mode' : 'HDFS Mode')}">HDFS Mode</p>
         </header>
 
         <!-- Upload Card -->
@@ -57,16 +57,17 @@
                     <div th:if="${hdfsDisconnected}" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
                         <span class="block sm:inline">HDFS is disconnected. File list is unavailable.</span>
                     </div>
-                    <h2 class="text-lg font-medium text-gray-900 mb-4" th:if="${!hdfsDisconnected}">Uploaded Files</h2>
+                    <h2 class="text-lg font-medium text-gray-900 mb-4" th:if="${!hdfsDisconnected}" 
+                        th:text="${isHdfsMode ? 'Files in HDFS' : 'Uploaded Files'}">Files in HDFS</h2>
                     <div class="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden" th:if="${!hdfsDisconnected}">
                         <ul class="divide-y divide-gray-200" id="fileList">
                             <li th:each="file : ${files}" class="px-4 py-3 hover:bg-gray-100 flex justify-between items-center">
                                 <span class="text-sm font-medium text-gray-900 truncate" th:text="${file}"></span>
-                                <!-- <a th:href="'/' + ${file}" class="text-blue-600 hover:text-blue-800 text-sm font-medium" download>Download</a> -->
                                 <a th:href="'/files/' + ${file}" class="text-blue-600 hover:text-blue-800 text-sm font-medium" download>Download</a>
                             </li>
-                            <li th:if="${#lists.isEmpty(files)}" class="px-4 py-3 text-gray-500 text-sm">
-                                No files uploaded yet.
+                            <li th:if="${#lists.isEmpty(files)}" class="px-4 py-3 text-gray-500 text-sm" 
+                                th:text="${isHdfsMode ? 'No files found in HDFS path.' : 'No files uploaded yet.'}">
+                                No files found in HDFS path.
                             </li>
                         </ul>
                     </div>

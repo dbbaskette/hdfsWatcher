@@ -37,8 +37,10 @@ public class FileUploadController {
         this.webHdfsService = validateService(webHdfsService, "WebHdfsService");
         this.output = validateService(output, "HdfsWatcherOutput");
         
+        String mode = properties.getMode();
+        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
         logger.info("FileUploadController initialized in {} mode", 
-            properties.isPseudoop() ? "pseudoop" : "HDFS");
+            isLocalMode ? "local" : "HDFS");
     }
     
     /**
@@ -59,34 +61,41 @@ public class FileUploadController {
      */
     @GetMapping("/")
     public String listUploadedFiles(Model model) {
-        logger.debug("Listing uploaded files in {} mode", properties.isPseudoop() ? "pseudoop" : "local");
+        String mode = properties.getMode(); // "standalone", "scdf", etc.
+        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+        
+        logger.debug("Listing uploaded files in {} mode", isLocalMode ? "local" : "HDFS");
         
         List<String> files;
         boolean hdfsDisconnected = false;
         
         try {
-            if (properties.isPseudoop()) {
-                files = webHdfsService.listFiles();
-                logger.debug("Retrieved {} files from WebHDFS", files.size());
-            } else {
+            if (isLocalMode) {
+                // Only use local storage in standalone mode with pseudoop=true
                 files = storageService.loadAll()
                     .map(path -> path.getFileName().toString())
                     .collect(Collectors.toList());
                 logger.debug("Retrieved {} files from local storage", files.size());
+            } else {
+                // Use WebHDFS for HDFS mode (both SCDF and standalone with pseudoop=false)
+                files = webHdfsService.listFiles();
+                logger.debug("Retrieved {} files from WebHDFS", files.size());
             }
         } catch (Exception e) {
-            logger.error("Error listing files in {} mode", properties.isPseudoop() ? "pseudoop" : "local", e);
+            logger.error("Error listing files in {} mode", isLocalMode ? "local" : "HDFS", e);
             files = List.of();
-            hdfsDisconnected = properties.isPseudoop();
+            hdfsDisconnected = !isLocalMode; // HDFS disconnected if not in local mode
             
-            String errorMessage = properties.isPseudoop() ? 
-                "HDFS is disconnected: " + e.getMessage() : 
-                "Local storage error: " + e.getMessage();
+            String errorMessage = isLocalMode ? 
+                "Local storage error: " + e.getMessage() : 
+                "HDFS is disconnected: " + e.getMessage();
             model.addAttribute("message", errorMessage);
         }
         
         model.addAttribute("files", files);
         model.addAttribute("isPseudoop", properties.isPseudoop());
+        model.addAttribute("isHdfsMode", !isLocalMode);
+        model.addAttribute("mode", mode);
         model.addAttribute("hdfsDisconnected", hdfsDisconnected);
         
         return "uploadForm";
@@ -101,11 +110,15 @@ public class FileUploadController {
         } catch (Exception e) {
             decodedFilename = filename; // fallback
         }
+        
+        String mode = properties.getMode();
+        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+        
         Resource file;
-        if (properties.isPseudoop()) {
-            file = webHdfsService.downloadFile(decodedFilename);
-        } else {
+        if (isLocalMode) {
             file = storageService.loadAsResource(decodedFilename);
+        } else {
+            file = webHdfsService.downloadFile(decodedFilename);
         }
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
             "attachment; filename=\"" + file.getFilename() + "\"").body(file);
@@ -127,8 +140,11 @@ public class FileUploadController {
         }
         
         String originalFilename = file.getOriginalFilename();
+        String mode = properties.getMode();
+        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+        
         logger.info("Handling file upload: {} ({} bytes) in {} mode", 
-            originalFilename, file.getSize(), properties.isPseudoop() ? "pseudoop" : "local");
+            originalFilename, file.getSize(), isLocalMode ? "local" : "HDFS");
         
         try {
             String publicUrl = processFileUpload(file, originalFilename);
@@ -154,10 +170,13 @@ public class FileUploadController {
      * Processes file upload and returns the public URL.
      */
     private String processFileUpload(MultipartFile file, String originalFilename) throws Exception {
-        if (properties.isPseudoop()) {
-            return processWebHdfsUpload(file, originalFilename);
-        } else {
+        String mode = properties.getMode();
+        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+        
+        if (isLocalMode) {
             return processLocalUpload(file);
+        } else {
+            return processWebHdfsUpload(file, originalFilename);
         }
     }
     
