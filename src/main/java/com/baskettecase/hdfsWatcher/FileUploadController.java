@@ -61,7 +61,7 @@ public class FileUploadController {
      */
     @GetMapping("/")
     public String listUploadedFiles(Model model) {
-        String mode = properties.getMode(); // "standalone", "scdf", etc.
+        String mode = properties.getMode(); // "standalone", "cloud", etc.
         boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
         
         logger.debug("Listing uploaded files in {} mode", isLocalMode ? "local" : "HDFS");
@@ -77,7 +77,7 @@ public class FileUploadController {
                     .collect(Collectors.toList());
                 logger.debug("Retrieved {} files from local storage", files.size());
             } else {
-                // Use WebHDFS for HDFS mode (both SCDF and standalone with pseudoop=false)
+                // Use WebHDFS for HDFS mode (cloud and standalone with pseudoop=false)
                 files = webHdfsService.listFiles();
                 logger.debug("Retrieved {} files from WebHDFS", files.size());
             }

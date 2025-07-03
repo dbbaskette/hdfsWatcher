@@ -37,13 +37,13 @@ public class HdfsWatcherProperties {
     /** HDFS user */
     private String hdfsUser;
     /**
-     * Application mode: 'standalone' or 'scdf'.
+     * Application mode: 'standalone' or 'cloud'.
      *
      * - 'standalone': outputs webhdfs URLs to terminal
-     * - 'scdf': outputs webhdfs URLs to Spring Cloud Data Flow stream (RabbitMQ)
+     * - 'cloud': outputs webhdfs URLs to Spring Cloud Data Flow stream (RabbitMQ)
      *
-     * This property can be set via --hdfswatcher.mode=standalone or --hdfswatcher.mode=scdf,
-     * or via environment variables (HDFSWATCHER_MODE) or profiles (application-scdf.yml).
+     * This property can be set via --hdfswatcher.mode=standalone or --hdfswatcher.mode=cloud,
+     * or via environment variables (HDFSWATCHER_MODE) or profiles (application-cloud.properties).
      */
     private String mode = "standalone";
 

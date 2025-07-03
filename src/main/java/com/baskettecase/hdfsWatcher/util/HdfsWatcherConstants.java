@@ -21,7 +21,7 @@ public final class HdfsWatcherConstants {
     
     // Application modes
     public static final String MODE_STANDALONE = "standalone";
-    public static final String MODE_SCDF = "scdf";
+    public static final String MODE_CLOUD = "cloud";
     
     // URL patterns and schemes
     public static final String HDFS_SCHEME = "hdfs://";

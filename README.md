@@ -10,7 +10,7 @@
 - Outputs WebHDFS URLs as JSON
 - Supports two modes:
   - **standalone**: Logs to console
-  - **scdf**: Streams to RabbitMQ
+  - **cloud**: Streams to RabbitMQ
 - Lightweight with minimal dependencies
 - **Pseudo-operational Mode**: Local file system support when HDFS is unavailable
 
@@ -19,7 +19,7 @@
 - Java 11+
 - Maven
 - Access to HDFS cluster
-- (For SCDF mode) RabbitMQ
+- (For cloud mode) RabbitMQ
 
 ## Quick Start
 
@@ -33,16 +33,16 @@
    java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=standalone
    ```
 
-3. **Run in SCDF Mode**
+3. **Run in Cloud Mode**
    ```sh
-   java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=scdf
+   java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=cloud
    ```
 
 ## Configuration
 
 Edit the appropriate properties file:
 - `src/main/resources/application-standalone.properties`
-- `src/main/resources/application-scdf.properties`
+- `src/main/resources/application-cloud.properties`
 - `src/main/resources/application.properties` (for common settings)
 
 ### Key Properties

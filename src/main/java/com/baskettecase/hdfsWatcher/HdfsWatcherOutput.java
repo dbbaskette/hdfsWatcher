@@ -28,7 +28,7 @@ public class HdfsWatcherOutput {
      * Sends file URL notification with proper validation and logging.
      * 
      * @param webhdfsUrl the file URL to send
-     * @param mode the application mode (standalone or scdf)
+     * @param mode the application mode (standalone or cloud)
      * @throws IllegalArgumentException if parameters are invalid
      */
     public void send(String webhdfsUrl, String mode) {
@@ -36,7 +36,8 @@ public class HdfsWatcherOutput {
         
         String json = buildJsonMessage(webhdfsUrl);
         
-        if (HdfsWatcherConstants.MODE_SCDF.equalsIgnoreCase(mode) || "stream".equalsIgnoreCase(mode)) {
+        if (HdfsWatcherConstants.MODE_CLOUD.equalsIgnoreCase(mode) || 
+            "stream".equalsIgnoreCase(mode)) {
             sendToStream(json);
         } else {
             // standalone mode
@@ -74,7 +75,7 @@ public class HdfsWatcherOutput {
     }
     
     /**
-     * Sends message to stream for SCDF mode.
+     * Sends message to stream for cloud mode.
      */
     private void sendToStream(String json) {
         try {

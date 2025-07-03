@@ -46,7 +46,7 @@
     {
       "name": "hdfswatcher.mode",
       "type": "java.lang.String",
-      "description": "Application mode: 'standalone' or 'scdf'",
+      "description": "Application mode: 'standalone' or 'cloud'",
       "defaultValue": "standalone"
     },
     {

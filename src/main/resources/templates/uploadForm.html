@@ -29,7 +29,7 @@
                 <img th:if="${isPseudoop}" th:src="@{/images/pseudoop.png}" alt="Pseudoop Logo" class="h-16">
             </div>
             <h1 class="text-4xl font-bold text-gray-800 mb-2">HDFS Watcher</h1>
-            <p class="text-gray-600" th:text="${isPseudoop ? 'Pseudoop Mode' : (mode == 'scdf' ? 'SCDF Mode' : 'HDFS Mode')}">HDFS Mode</p>
+            <p class="text-gray-600" th:text="${isPseudoop ? 'Pseudoop Mode' : (mode == 'cloud' ? 'Cloud Mode' : 'HDFS Mode')}">HDFS Mode</p>
         </header>
 
         <!-- Upload Card -->
