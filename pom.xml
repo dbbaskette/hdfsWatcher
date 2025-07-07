@@ -11,7 +11,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.baskettecase</groupId>
     <artifactId>hdfsWatcher</artifactId>
-    <version>3.8.2</version>
+    <version>3.9.0</version>
     <name>hdfsWatcher</name>
     <description>Spring Boot app for watching HDFS and sending file URLs to Spring Cloud Data Flow</description>
     <properties>
@@ -69,6 +69,18 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.2.2</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Implementation-Version>${project.version}</Implementation-Version>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
             </plugin>
         </plugins>
     </build>
