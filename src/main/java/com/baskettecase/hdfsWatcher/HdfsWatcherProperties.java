@@ -67,6 +67,8 @@ public class HdfsWatcherProperties {
     // Add this field
     private String publicAppUri;
 
+    private String appVersion;
+
     @Autowired
     private transient Environment environment; // Used to access environment variables
 
@@ -91,6 +93,21 @@ public class HdfsWatcherProperties {
         }
         
         logger.info("{} Determined publicAppUri: {}", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, this.publicAppUri);
+
+        // Read version from VERSION file if present
+        try {
+            java.nio.file.Path versionPath = java.nio.file.Paths.get("VERSION");
+            if (java.nio.file.Files.exists(versionPath)) {
+                this.appVersion = java.nio.file.Files.readString(versionPath).trim();
+                logger.info("{} Loaded app version from VERSION file: {}", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, this.appVersion);
+            } else {
+                this.appVersion = null;
+                logger.warn("{} VERSION file not found, appVersion will be null", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES);
+            }
+        } catch (Exception e) {
+            logger.error("{} Failed to read VERSION file", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, e);
+            this.appVersion = null;
+        }
     }
     
     /**
@@ -193,4 +210,8 @@ public class HdfsWatcherProperties {
     public void setHdfsUser(String hdfsUser) { this.hdfsUser = hdfsUser; }
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
+
+    public String getAppVersion() {
+        return appVersion;
+    }
 }

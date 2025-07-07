@@ -104,6 +104,7 @@ public class FileUploadController {
         model.addAttribute("isHdfsMode", !isLocalMode);
         model.addAttribute("mode", mode);
         model.addAttribute("hdfsDisconnected", hdfsDisconnected);
+        model.addAttribute("appVersion", properties.getAppVersion());
         
         return "uploadForm";
     }
