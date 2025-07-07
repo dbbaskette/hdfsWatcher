@@ -478,6 +478,12 @@ upload_artifact_to_release() {
     local version="$1"
     local artifact_path="$2"
 
+    print_info "=== Upload Debug Info ==="
+    print_info "Version: $version"
+    print_info "Artifact path: $artifact_path"
+    print_info "Artifact exists: $([[ -f "$artifact_path" ]] && echo "YES" || echo "NO")"
+    print_info "Artifact size: $(du -h "$artifact_path" 2>/dev/null | cut -f1 || echo "N/A")"
+
     if [[ -z "$artifact_path" || ! -f "$artifact_path" ]]; then
         print_error "Artifact not found at: $artifact_path"
         return 1
@@ -489,8 +495,10 @@ upload_artifact_to_release() {
         release_tag="v$version"
     fi
 
+    print_info "Release tag: $release_tag"
     print_info "Uploading artifact to release $release_tag..."
     local artifact_name=$(basename "$artifact_path")
+    print_info "Artifact name: $artifact_name"
     
     # Check if release exists
     if [ "$DRY_RUN" = false ]; then
@@ -513,15 +521,19 @@ upload_artifact_to_release() {
     while [ $attempt -le $max_attempts ]; do
         print_info "Upload attempt $attempt of $max_attempts..."
         
+        print_info "Executing: gh release upload $release_tag $artifact_path"
         if execute "gh" "release" "upload" "$release_tag" "$artifact_path"; then
             print_success "Artifact uploaded successfully!"
             
             # Verify the upload was successful
             if [ "$DRY_RUN" = false ]; then
+                print_info "Verifying upload..."
                 if gh release view "$release_tag" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
                     print_success "Upload verification successful: $artifact_name found on release $release_tag"
                 else
                     print_warning "Upload verification failed: $artifact_name not found on release $release_tag"
+                    print_info "Available assets on release:"
+                    gh release view "$release_tag" --json assets --jq ".assets[].name" 2>/dev/null || print_info "No assets found"
                 fi
             fi
             
@@ -732,9 +744,20 @@ main() {
     # Always ensure the JAR is uploaded to the release
     if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
         print_info "Ensuring JAR is uploaded to release..."
+        print_info "JAR file path: $artifact_path"
+        print_info "JAR file size: $(du -h "$artifact_path" | cut -f1)"
+        
         if ! upload_artifact_to_release "$new_version" "$artifact_path"; then
             print_warning "Failed to upload JAR to release. You may need to upload it manually:"
             print_info "gh release upload v$new_version '$artifact_path'"
+        else
+            print_success "JAR upload completed successfully!"
+        fi
+    else
+        print_error "JAR file not found at: $artifact_path"
+        if [[ -n "$artifact_path" ]]; then
+            print_info "Available files in target directory:"
+            ls -la target/ 2>/dev/null || print_info "target/ directory not found"
         fi
     fi
 
