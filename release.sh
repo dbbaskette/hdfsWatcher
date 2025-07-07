@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# set -x # Enable debugging (commented out to reduce output)
+
 # ==============================================================================
 # Generic Project Release Script
 # ==============================================================================
@@ -27,8 +29,9 @@ DEFAULT_STARTING_VERSION="1.0.0"
 UPLOAD_RETRY_COUNT="3"
 UPLOAD_TIMEOUT="300"
 BUILD_TOOL=""
-MAIN_BRANCH="main"
+MAIN_BRANCH=""
 DRY_RUN=false
+UPLOAD_ONLY=false
 PLUGINS_DIR="plugins"
 
 # Load from config file if it exists
@@ -76,8 +79,9 @@ print_error() {
 execute() {
     if [ "$DRY_RUN" = true ]; then
         print_info "[DRY RUN] Would execute: $@"
+        return 0
     else
-        print_info "Executing: $@"
+        # print_info "Executing: $@"  # Commented out to reduce verbose output
         "$@"
     fi
 }
@@ -90,9 +94,9 @@ run_plugins() {
     local hook_name=$1
     local hook_dir="$PLUGINS_DIR/$hook_name"
     if [ -d "$hook_dir" ]; then
-        print_info "Running $hook_name plugins..."
+        # print_info "Running $hook_name plugins..."  # Commented out to reduce verbose output
         for plugin in $(find "$hook_dir" -type f -executable | sort); do
-            print_info "Executing plugin: $plugin"
+            # print_info "Executing plugin: $plugin"  # Commented out to reduce verbose output
             execute "$plugin"
         done
     fi
@@ -105,6 +109,7 @@ run_plugins() {
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=true ;;
+        --upload-only) UPLOAD_ONLY=true ;;
         *) print_error "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
@@ -116,7 +121,7 @@ done
 
 detect_build_tool() {
     if [[ -n "$BUILD_TOOL" ]]; then
-        print_info "Build tool specified in config: $BUILD_TOOL"
+        # print_info "Build tool specified in config: $BUILD_TOOL"  # Commented out to reduce verbose output
         return
     fi
 
@@ -128,7 +133,31 @@ detect_build_tool() {
         print_error "Could not detect build tool. Please specify BUILD_TOOL in .release.conf"
         exit 1
     fi
-    print_info "Detected build tool: $BUILD_TOOL"
+    # print_info "Detected build tool: $BUILD_TOOL"  # Commented out to reduce verbose output
+}
+
+detect_main_branch() {
+    if [[ -n "$MAIN_BRANCH" ]]; then
+        # print_info "Using main branch from config: $MAIN_BRANCH"  # Commented out to reduce verbose output
+        return
+    fi
+
+    local remote_head=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d' ' -f5)
+    if [[ -n "$remote_head" && "$remote_head" != "(unknown)" ]]; then
+        MAIN_BRANCH=$remote_head
+        # print_info "Auto-detected main branch from remote: $MAIN_BRANCH"  # Commented out to reduce verbose output
+        return
+    fi
+
+    if git show-ref --verify --quiet refs/heads/main; then
+        MAIN_BRANCH="main"
+    elif git show-ref --verify --quiet refs/heads/master; then
+        MAIN_BRANCH="master"
+    else
+        print_warning "Could not auto-detect main branch. Using fallback: main. Set MAIN_BRANCH in .release.conf to override."
+        MAIN_BRANCH="main"
+    fi
+    # print_info "Using detected/fallback main branch: $MAIN_BRANCH"  # Commented out to reduce verbose output
 }
 
 get_project_info() {
@@ -141,7 +170,6 @@ get_project_info() {
             xmlstarlet sel -N pom=http://maven.apache.org/POM/4.0.0 -t -v "/pom:project/pom:artifactId" pom.xml
             ;;
         "gradle")
-            # This is a simplification. A real implementation would need to parse the build.gradle file.
             grep -oP "rootProject.name = '\K[^']+" settings.gradle.kts
             ;;
     esac
@@ -165,7 +193,6 @@ update_version() {
             execute "mvn" "versions:set" "-DnewVersion=$new_version" "-DgenerateBackupPoms=false"
             ;;
         "gradle")
-            # This is a simplification. A real implementation would need to parse and update the build.gradle file.
             execute "sed" "-i" "s/version = '.*'/version = '$new_version'/" "build.gradle.kts"
             ;;
     esac
@@ -248,17 +275,17 @@ check_git_status() {
     execute "git" "fetch" "--all"
     local current_branch=$(git branch --show-current)
     if [[ "$current_branch" != "$MAIN_BRANCH" ]]; then
-        print_warning "You are not on the main branch ($MAIN_BRANCH). Continue? (y/N)"
-        read -r response
-        if [[ "$response" != "y" ]]; then
+        print_warning "You are not on the main branch ($MAIN_BRANCH). This is the branch that will be tagged for release."
+        read -p "Do you want to continue? (y/N): " continue_choice
+        if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
             print_info "Release cancelled."
             exit 0
         fi
     fi
     if ! git diff-index --quiet HEAD --; then
-        print_warning "You have uncommitted changes."
+        print_warning "You have uncommitted changes that will be included in the release."
         git status --short
-        read -p "Continue? (y/N): " continue_choice
+        read -p "Do you want to continue? (y/N): " continue_choice
         if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
             print_info "Release cancelled."
             exit 0
@@ -270,31 +297,110 @@ generate_changelog() {
     local latest_tag=$(git describe --tags --abbrev=0 2>/dev/null)
     if [[ -z "$latest_tag" ]]; then
         print_warning "No previous tag found. Changelog will include all commits."
-        execute "git" "log" "--pretty=format:%s"
+        git log --pretty=format:%s
     else
         print_info "Generating changelog since tag $latest_tag"
-        execute "git" "log" "${latest_tag}..HEAD" "--pretty=format:%s"
+        git log "${latest_tag}..HEAD" "--pretty=format:%s"
     fi
 }
 
-create_github_release() {
+create_github_release_with_retry() {
     local version="$1"
     local title="$2"
     local notes="$3"
-    local jar_path="$4"
-    local cmd="gh release create $version --title '$title' --notes '$notes'"
-    if [[ -n "$jar_path" && -f "$jar_path" ]]; then
-        cmd="$cmd '$jar_path'"
+    local artifact_path="$4"
+
+    print_info "Configuring GitHub CLI timeout to ${UPLOAD_TIMEOUT} seconds"
+    export GH_REQUEST_TIMEOUT="${UPLOAD_TIMEOUT}s"
+
+    local attempt=1
+    local max_attempts=$UPLOAD_RETRY_COUNT
+
+    while [ $attempt -le $max_attempts ]; do
+        if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
+            print_info "Release creation attempt $attempt of $max_attempts with attachment: $artifact_path"
+            local artifact_size=$(du -h "$artifact_path" | cut -f1)
+            print_info "Artifact file size: $artifact_size"
+
+            local release_cmd="gh release create \"$version\" --title \"$title\" --notes \"$notes\" \"$artifact_path\""
+            
+            if [ "$DRY_RUN" = true ]; then
+                execute "bash" "-c" "$release_cmd"
+                return 0
+            fi
+
+            if bash -c "$release_cmd"; then
+                print_success "GitHub release created successfully with attachment!"
+                return 0
+            else
+                local exit_code=$?
+                print_warning "Attempt $attempt failed (exit code: $exit_code)."
+                if [ $attempt -eq $max_attempts ]; then
+                    print_warning "All attachment upload attempts failed. Creating release without attachment..."
+                    break
+                else
+                    print_info "Waiting 10 seconds before retry..."
+                    sleep 10
+                fi
+            fi
+        else
+            # No artifact, just create release and exit loop
+            break
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    print_info "Creating GitHub release without attachment..."
+    local final_cmd="gh release create \"$version\" --title \"$title\" --notes \"$notes\""
+    if execute "bash" "-c" "$final_cmd"; then
+        print_success "GitHub release created successfully!"
+        if [[ -n "$artifact_path" ]]; then
+            print_warning "Could not attach artifact: $artifact_path"
+            print_info "Manual upload command: gh release upload $version '$artifact_path'"
+        fi
+        return 0
+    else
+        print_error "Failed to create GitHub release."
+        return 1
     fi
-    execute "bash" "-c" "$cmd"
 }
 
-rollback_changes() {
+upload_artifact_to_release() {
+    local version="$1"
+    local artifact_path="$2"
+
+    if [[ -z "$artifact_path" || ! -f "$artifact_path" ]]; then
+        print_error "Artifact not found at: $artifact_path"
+        return 1
+    fi
+
+    print_info "Uploading artifact to release v$version..."
+    local artifact_name=$(basename "$artifact_path")
+    
+    if [ "$DRY_RUN" = false ]; then
+      if gh release view "v$version" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
+          print_warning "Asset '$artifact_name' already exists on release v$version. Deleting it first."
+          execute "gh" "release" "delete-asset" "v$version" "$artifact_name" "--yes"
+      fi
+    fi
+
+    execute "gh" "release" "upload" "v$version" "$artifact_path"
+    print_success "Artifact uploaded successfully."
+}
+
+revert_version_changes() {
+    local original_version=$1
+    print_warning "Reverting version changes..."
+    execute "echo" "$original_version" ">" "$VERSION_FILE"
+    update_version "$original_version"
+}
+
+rollback_git_changes() {
     local version=$1
-    print_warning "Rolling back changes..."
+    print_warning "Rolling back git changes..."
     run_plugins "on-error"
-    execute "git" "tag" "-d" "$version"
-    execute "git" "push" "--delete" "origin" "$version"
+    execute "git" "tag" "-d" "v$version"
+    execute "git" "push" "--delete" "origin" "v$version"
     execute "git" "reset" "--hard" "HEAD~1"
     execute "git" "push" "--force"
 }
@@ -303,7 +409,53 @@ rollback_changes() {
 # MAIN SCRIPT
 # ==============================================================================
 
+upload_only_main() {
+    print_info "=== Upload-Only Release Mode ==="
+    if [ "$DRY_RUN" = true ]; then
+        print_warning "Running in dry-run mode. No changes will be made."
+    fi
+
+    detect_build_tool
+    check_requirements
+
+    local project_name=$(get_project_info)
+    print_info "Project name: $project_name"
+
+    local current_version
+    if [[ -f "$VERSION_FILE" ]]; then
+        current_version=$(cat "$VERSION_FILE")
+    else
+        current_version=$(get_current_version)
+    fi
+    
+    if [[ -z "$current_version" ]]; then
+        print_error "Could not determine current version."
+        exit 1
+    fi
+    print_info "Using current version: $current_version"
+
+    if [ "$DRY_RUN" = false ]; then
+      if ! gh release view "v$current_version" > /dev/null 2>&1; then
+          print_error "Release v$current_version does not exist. Cannot upload artifact."
+          print_info "Please create the release first by running a full release."
+          exit 1
+      fi
+    fi
+
+    local artifact_path=$(build_project "$current_version" "$project_name")
+    run_plugins "post-build"
+
+    upload_artifact_to_release "v$current_version" "$artifact_path"
+
+    print_success "Artifact for v$current_version has been successfully uploaded."
+}
+
 main() {
+    if [ "$UPLOAD_ONLY" = true ]; then
+        upload_only_main "$@"
+        exit 0
+    fi
+
     trap 'run_plugins "on-error"' ERR
 
     print_info "=== Generic Project Release Script ==="
@@ -314,6 +466,7 @@ main() {
     run_plugins "pre-release"
 
     detect_build_tool
+    detect_main_branch
     check_requirements
     check_git_status
 
@@ -351,9 +504,6 @@ main() {
     esac
     print_info "New version: $new_version"
 
-    echo "$new_version" > "$VERSION_FILE"
-    update_version "$new_version"
-
     local changelog=$(generate_changelog)
     echo "Generated changelog:"
     echo "$changelog"
@@ -368,16 +518,19 @@ main() {
     fi
 
     print_info "Release plan:"
-    print_info "  1. Commit changes with message: '$commit_msg'"
-    print_info "  2. Create and push tag: v$new_version"
-    print_info "  3. Build project"
-    print_info "  4. Create GitHub release"
+    print_info "  1. Update version to $new_version"
+    print_info "  2. Commit changes with message: '$commit_msg'"
+    print_info "  3. Create and push tag: v$new_version"
+    print_info "  4. Build project"
+    print_info "  5. Create GitHub release"
     read -p "Proceed? (y/N): " proceed_choice
     if [[ ! "$proceed_choice" =~ ^[Yy]$ ]]; then
         print_info "Release cancelled."
-        rollback_changes "v$new_version"
         exit 0
     fi
+
+    execute "echo" "$new_version" ">" "$VERSION_FILE"
+    update_version "$new_version"
 
     run_plugins "pre-commit"
     execute "git" "add" "."
@@ -387,14 +540,14 @@ main() {
     execute "git" "tag" "-a" "v$new_version" "-m" "$commit_msg"
     execute "git" "push" "origin" "v$new_version"
 
-    local jar_path=$(build_project "$new_version" "$project_name")
+    local artifact_path=$(build_project "$new_version" "$project_name")
     run_plugins "post-build"
 
-    if ! create_github_release "v$new_version" "Release v$new_version" "$release_notes" "$jar_path"; then
+    if ! create_github_release_with_retry "v$new_version" "Release v$new_version" "$release_notes" "$artifact_path"; then
         print_error "Failed to create GitHub release."
         read -p "Rollback changes? (y/N): " rollback_choice
         if [[ "$rollback_choice" =~ ^[Yy]$ ]]; then
-            rollback_changes "v$new_version"
+            rollback_git_changes "$new_version"
         fi
         exit 1
     fi
