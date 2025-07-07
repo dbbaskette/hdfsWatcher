@@ -163,8 +163,8 @@ increment_version() {
         *)
             print_error "Invalid increment type. Use: major, minor, or patch"
             return 1
-            ;;
-    esac
+      ;;
+  esac
     
     echo "$major.$minor.$patch"
 }
@@ -210,9 +210,9 @@ check_git_status() {
     # Verify we're in a git repository
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
         print_error "Not in a git repository"
-        exit 1
-    fi
-    
+  exit 1
+fi
+
     # Fetch latest changes to ensure we're up to date
     print_info "Fetching latest changes from remote..."
     git fetch --all
@@ -229,9 +229,9 @@ check_git_status() {
         read -p "Do you want to continue? (y/N): " continue_choice
         if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
             print_info "Release cancelled."
-            exit 0
-        fi
+      exit 0
     fi
+  fi
 }
 
 # ==============================================================================
@@ -432,7 +432,7 @@ project_name=$(get_project_info)
 if [[ $? -ne 0 || -z "$project_name" ]]; then
     print_error "Failed to detect project information from pom.xml"
     exit 1
-fi
+  fi
 print_info "Project name: $project_name"
 
 # Step 4: Determine current version from VERSION file or POM
@@ -494,8 +494,8 @@ if ! update_pom_version "$new_version"; then
     print_error "Failed to update POM version. Release cancelled."
     echo "$current_version" > "$VERSION_FILE"
     exit 1
-fi
-
+  fi
+  
 # Step 7: Get commit message and release notes from user
 echo
 read -p "Enter release commit message [Release v$new_version]: " commit_msg

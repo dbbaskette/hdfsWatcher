@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.URI;
@@ -31,7 +32,6 @@ public class HdfsWatcherService {
     
     private final HdfsWatcherProperties properties;
     private final FileSystem fileSystem;
-    private final Set<String> seenFiles = new HashSet<>();
     private final HdfsWatcherOutput output;
     private final boolean pseudoop;
     private final java.nio.file.Path localWatchPath;
@@ -40,17 +40,12 @@ public class HdfsWatcherService {
         this.properties = validateProperties(properties);
         this.output = validateOutput(output);
         this.pseudoop = properties.isPseudoop();
-        
-        logger.info("Initializing HdfsWatcherService in {} mode", 
-            pseudoop ? "pseudoop" : "HDFS");
-        
+        logger.info("Initializing HdfsWatcherService in {} mode", pseudoop ? "pseudoop" : "HDFS");
         if (this.pseudoop) {
-            // In pseudoop mode, use local file system
             this.localWatchPath = initializeLocalStorage(properties.getLocalStoragePath());
             this.fileSystem = null;
             logger.info("Local storage initialized at: {}", this.localWatchPath);
         } else {
-            // In HDFS mode
             this.localWatchPath = null;
             this.fileSystem = initializeHdfsConnection(properties);
             logger.info("HDFS connection initialized for: {}", properties.getHdfsUri());
@@ -144,8 +139,6 @@ public class HdfsWatcherService {
 
     @Scheduled(fixedDelayString = "${hdfswatcher.pollInterval:60}000")
     public void pollHdfsDirectory() {
-        logger.debug("Starting scheduled directory poll in {} mode", pseudoop ? "pseudoop" : "HDFS");
-        
         try {
             if (pseudoop) {
                 pollLocalDirectory();
@@ -166,25 +159,31 @@ public class HdfsWatcherService {
                 new Path(properties.getHdfsPath()), 
                 false
             );
+            int processedCount = 0;
+            int batchSize = 0;
+            final int MAX_BATCH_SIZE = 5; // Process 5 files at a time
             
-            int newFilesCount = 0;
             while (files.hasNext()) {
                 LocatedFileStatus fileStatus = files.next();
-                String filePath = fileStatus.getPath().toString();
+                String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
+                output.send(webhdfsUrl, properties.getMode());
+                processedCount++;
+                batchSize++;
                 
-                if (seenFiles.add(filePath)) {
-                    String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
-                    output.send(webhdfsUrl, properties.getMode());
-                    newFilesCount++;
-                    logger.info("New file detected in HDFS: {}", fileStatus.getPath().getName());
+                // Add a small delay every 5 files to avoid log rate limits
+                if (batchSize >= MAX_BATCH_SIZE) {
+                    try {
+                        Thread.sleep(100); // 100ms delay
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    batchSize = 0;
                 }
             }
-            
-            if (newFilesCount > 0) {
-                logger.info("Processed {} new files from HDFS directory: {}", 
-                    newFilesCount, properties.getHdfsPath());
+            if (processedCount > 0) {
+                logger.error("Processed {} files from HDFS directory: {}", processedCount, properties.getHdfsPath());
             }
-            
         } catch (IOException e) {
             logger.error("Error polling HDFS directory '{}': {}", properties.getHdfsPath(), e.getMessage(), e);
         }
@@ -195,30 +194,20 @@ public class HdfsWatcherService {
      */
     private void pollLocalDirectory() {
         try (Stream<java.nio.file.Path> stream = Files.list(localWatchPath)) {
-            int newFilesCount = 0;
-            
+            int processedCount = 0;
             for (java.nio.file.Path file : stream.filter(Files::isRegularFile).toList()) {
-                String filePath = file.toString();
-                
-                if (seenFiles.add(filePath)) {
-                    String fileName = file.getFileName().toString();
-                    String fileUrl = UrlUtils.buildFileUrl(
-                        properties.getPublicAppUri(), 
-                        HdfsWatcherConstants.FILES_PATH, 
-                        fileName
-                    );
-                    
-                    output.send(fileUrl, properties.getMode());
-                    newFilesCount++;
-                    logger.info("New file detected in local directory: {}", fileName);
-                }
+                String fileName = file.getFileName().toString();
+                String fileUrl = UrlUtils.buildFileUrl(
+                    properties.getPublicAppUri(), 
+                    HdfsWatcherConstants.FILES_PATH, 
+                    fileName
+                );
+                output.send(fileUrl, properties.getMode());
+                processedCount++;
             }
-            
-            if (newFilesCount > 0) {
-                logger.info("Processed {} new files from local directory: {}", 
-                    newFilesCount, localWatchPath);
+            if (processedCount > 0) {
+                logger.error("Processed {} files from local directory: {}", processedCount, localWatchPath);
             }
-            
         } catch (IOException e) {
             logger.error("Error polling local directory '{}': {}", localWatchPath, e.getMessage(), e);
         }
@@ -239,7 +228,6 @@ public class HdfsWatcherService {
                            HdfsWatcherConstants.WEBHDFS_PATH + 
                            encodedPath;
         
-        logger.debug("Built WebHDFS URL: {} for path: {}", webhdfsUrl, path);
         return webhdfsUrl;
     }
     
@@ -281,23 +269,6 @@ public class HdfsWatcherService {
         }
         
         return scheme + "://" + hostPort;
-    }
-    
-    /**
-     * Resets the processed files tracking, allowing all files to be reprocessed.
-     * This is useful for testing or when you want to reprocess all files.
-     */
-    public void resetProcessedFiles() {
-        int previousCount = seenFiles.size();
-        seenFiles.clear();
-        logger.info("Reset processed files tracking. Cleared {} previously processed files.", previousCount);
-    }
-    
-    /**
-     * Gets the count of currently tracked processed files.
-     */
-    public int getProcessedFilesCount() {
-        return seenFiles.size();
     }
     
     /**

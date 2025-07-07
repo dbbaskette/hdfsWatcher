@@ -218,59 +218,6 @@ public class FileUploadController {
     }
 
     /**
-     * Resets the processed files tracking, allowing all files to be reprocessed.
-     * 
-     * @return JSON response with reset status
-     */
-    @PostMapping("/reset")
-    @ResponseBody
-    public ResponseEntity<Object> resetProcessedFiles() {
-        try {
-            int previousCount = hdfsWatcherService.getProcessedFilesCount();
-            hdfsWatcherService.resetProcessedFiles();
-            
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Processed files tracking has been reset",
-                "clearedCount", previousCount,
-                "timestamp", System.currentTimeMillis()
-            ));
-        } catch (Exception e) {
-            logger.error("Failed to reset processed files", e);
-            return ResponseEntity.status(500).body(Map.of(
-                "success", false,
-                "message", "Failed to reset processed files: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
-            ));
-        }
-    }
-    
-    /**
-     * Gets the current count of processed files being tracked.
-     * 
-     * @return JSON response with processed files count
-     */
-    @GetMapping("/status")
-    @ResponseBody
-    public ResponseEntity<Object> getProcessedFilesStatus() {
-        try {
-            int count = hdfsWatcherService.getProcessedFilesCount();
-            
-            return ResponseEntity.ok(Map.of(
-                "processedFilesCount", count,
-                "timestamp", System.currentTimeMillis()
-            ));
-        } catch (Exception e) {
-            logger.error("Failed to get processed files status", e);
-            return ResponseEntity.status(500).body(Map.of(
-                "success", false,
-                "message", "Failed to get processed files status: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
-            ));
-        }
-    }
-
-    /**
      * Handles runtime exceptions with proper logging.
      * 
      * @param exc the runtime exception
