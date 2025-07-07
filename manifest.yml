@@ -1,0 +1,14 @@
+applications:
+- name: 87pe1Ty-rag-stream-hdfsWatcher-v48
+  memory: 2G
+  instances: 1
+  buildpacks:
+    - java_buildpack_offline
+  env:
+    JAVA_OPTS: "-Djava.security.egd=file:/dev/./urandom"
+    JBP_CONFIG_OPEN_JDK_JRE: "{ jre: { version: 21.+ } }"
+  services:
+    - 87pe1Ty-rag-stream-rabbitmq
+    - 87pe1Ty-rag-stream-redis
+  routes:
+    - route: 87pe1Ty-rag-stream-hdfsWatcher-v48.apps.tas-ndc.kuhn-labs.com 

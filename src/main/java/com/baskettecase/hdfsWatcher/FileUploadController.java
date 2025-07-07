@@ -223,6 +223,58 @@ public class FileUploadController {
      * @param exc the runtime exception
      * @return the error response
      */
+    /**
+     * Gets the current status of processed files.
+     * 
+     * @return JSON response with processed files count
+     */
+    @GetMapping("/status")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getStatus() {
+        try {
+            int processedCount = hdfsWatcherService.getProcessedFilesCount();
+            Map<String, Object> response = Map.of(
+                "processedFilesCount", processedCount,
+                "status", "success"
+            );
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error getting status", e);
+            Map<String, Object> response = Map.of(
+                "processedFilesCount", 0,
+                "status", "error",
+                "message", e.getMessage()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Clears all processed files tracking.
+     * 
+     * @return JSON response with the number of files cleared
+     */
+    @PostMapping("/reset")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> resetProcessedFiles() {
+        try {
+            int clearedCount = hdfsWatcherService.clearAllProcessedFiles();
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "clearedCount", clearedCount,
+                "message", "Successfully cleared " + clearedCount + " processed files"
+            );
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error resetting processed files", e);
+            Map<String, Object> response = Map.of(
+                "success", false,
+                "message", "Failed to reset processed files: " + e.getMessage()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<?> handleStorageFileNotFound(RuntimeException exc) {
         logger.error("Handling RuntimeException in FileUploadController", exc);

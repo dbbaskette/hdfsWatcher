@@ -1,5 +1,6 @@
 package com.baskettecase.hdfsWatcher;
 
+import com.baskettecase.hdfsWatcher.service.ProcessedFilesService;
 import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
 import com.baskettecase.hdfsWatcher.util.UrlUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -33,12 +34,14 @@ public class HdfsWatcherService {
     private final HdfsWatcherProperties properties;
     private final FileSystem fileSystem;
     private final HdfsWatcherOutput output;
+    private final ProcessedFilesService processedFilesService;
     private final boolean pseudoop;
     private final java.nio.file.Path localWatchPath;
 
-    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output) throws Exception {
+    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output, ProcessedFilesService processedFilesService) throws Exception {
         this.properties = validateProperties(properties);
         this.output = validateOutput(output);
+        this.processedFilesService = processedFilesService;
         this.pseudoop = properties.isPseudoop();
         logger.info("Initializing HdfsWatcherService in {} mode", pseudoop ? "pseudoop" : "HDFS");
         if (this.pseudoop) {
@@ -151,7 +154,7 @@ public class HdfsWatcherService {
     }
     
     /**
-     * Polls HDFS directory for new files with proper error handling.
+     * Polls HDFS directory for new files with proper error handling and duplicate prevention.
      */
     private void pollHdfs() {
         try {
@@ -160,13 +163,31 @@ public class HdfsWatcherService {
                 false
             );
             int processedCount = 0;
+            int skippedCount = 0;
             int batchSize = 0;
             final int MAX_BATCH_SIZE = 5; // Process 5 files at a time
             
             while (files.hasNext()) {
                 LocatedFileStatus fileStatus = files.next();
+                String filename = fileStatus.getPath().getName();
+                long fileSize = fileStatus.getLen();
+                long modificationTime = fileStatus.getModificationTime();
+                
+                // Generate unique hash for the file
+                String fileHash = processedFilesService.generateFileHash(filename, fileSize, modificationTime);
+                
+                // Check if file has already been processed
+                if (processedFilesService.isFileProcessed(fileHash)) {
+                    skippedCount++;
+                    continue;
+                }
+                
+                // Process the file
                 String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
                 output.send(webhdfsUrl, properties.getMode());
+                
+                // Mark file as processed
+                processedFilesService.markFileAsProcessed(fileHash);
                 processedCount++;
                 batchSize++;
                 
@@ -181,8 +202,10 @@ public class HdfsWatcherService {
                     batchSize = 0;
                 }
             }
-            if (processedCount > 0) {
-                logger.error("Processed {} files from HDFS directory: {}", processedCount, properties.getHdfsPath());
+            
+            if (processedCount > 0 || skippedCount > 0) {
+                logger.error("HDFS Poll Results - Processed: {}, Skipped: {}, Total: {}", 
+                    processedCount, skippedCount, processedCount + skippedCount);
             }
         } catch (IOException e) {
             logger.error("Error polling HDFS directory '{}': {}", properties.getHdfsPath(), e.getMessage(), e);
@@ -190,23 +213,43 @@ public class HdfsWatcherService {
     }
     
     /**
-     * Polls local directory for new files with proper error handling and URL encoding.
+     * Polls local directory for new files with proper error handling and duplicate prevention.
      */
     private void pollLocalDirectory() {
         try (Stream<java.nio.file.Path> stream = Files.list(localWatchPath)) {
             int processedCount = 0;
+            int skippedCount = 0;
+            
             for (java.nio.file.Path file : stream.filter(Files::isRegularFile).toList()) {
                 String fileName = file.getFileName().toString();
+                long fileSize = Files.size(file);
+                long modificationTime = Files.getLastModifiedTime(file).toMillis();
+                
+                // Generate unique hash for the file
+                String fileHash = processedFilesService.generateFileHash(fileName, fileSize, modificationTime);
+                
+                // Check if file has already been processed
+                if (processedFilesService.isFileProcessed(fileHash)) {
+                    skippedCount++;
+                    continue;
+                }
+                
+                // Process the file
                 String fileUrl = UrlUtils.buildFileUrl(
                     properties.getPublicAppUri(), 
                     HdfsWatcherConstants.FILES_PATH, 
                     fileName
                 );
                 output.send(fileUrl, properties.getMode());
+                
+                // Mark file as processed
+                processedFilesService.markFileAsProcessed(fileHash);
                 processedCount++;
             }
-            if (processedCount > 0) {
-                logger.error("Processed {} files from local directory: {}", processedCount, localWatchPath);
+            
+            if (processedCount > 0 || skippedCount > 0) {
+                logger.error("Local Poll Results - Processed: {}, Skipped: {}, Total: {}", 
+                    processedCount, skippedCount, processedCount + skippedCount);
             }
         } catch (IOException e) {
             logger.error("Error polling local directory '{}': {}", localWatchPath, e.getMessage(), e);
@@ -291,5 +334,32 @@ public class HdfsWatcherService {
         }
         
         return encodedPath.toString();
+    }
+    
+    /**
+     * Gets the number of processed files.
+     * 
+     * @return the number of processed files
+     */
+    public int getProcessedFilesCount() {
+        return processedFilesService.getProcessedFilesCount();
+    }
+    
+    /**
+     * Clears all processed files tracking.
+     * 
+     * @return the number of files that were cleared
+     */
+    public int clearAllProcessedFiles() {
+        return processedFilesService.clearAllProcessedFiles();
+    }
+    
+    /**
+     * Marks a specific file for reprocessing by its hash.
+     * 
+     * @param fileHash the file hash to mark for reprocessing
+     */
+    public void markFileForReprocessing(String fileHash) {
+        processedFilesService.markFileForReprocessing(fileHash);
     }
 }
