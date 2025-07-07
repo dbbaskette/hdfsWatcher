@@ -22,3 +22,5 @@ Thumbs.db
 
 # Others
 *.iml
+release.sh
+.release.conf

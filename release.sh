@@ -354,9 +354,15 @@ create_github_release_with_retry() {
     local final_cmd="gh release create \"$version\" --title \"$title\" --notes \"$notes\""
     if execute "bash" "-c" "$final_cmd"; then
         print_success "GitHub release created successfully!"
-        if [[ -n "$artifact_path" ]]; then
-            print_warning "Could not attach artifact: $artifact_path"
-            print_info "Manual upload command: gh release upload $version '$artifact_path'"
+        # Always attempt to upload the artifact separately if it exists
+        if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
+            print_info "Attempting to upload artifact separately..."
+            if upload_artifact_to_release "$version" "$artifact_path"; then
+                print_success "Artifact uploaded successfully after release creation!"
+            else
+                print_warning "Failed to upload artifact separately. Manual upload may be needed:"
+                print_info "gh release upload $version '$artifact_path'"
+            fi
         fi
         return 0
     else
@@ -377,15 +383,41 @@ upload_artifact_to_release() {
     print_info "Uploading artifact to release v$version..."
     local artifact_name=$(basename "$artifact_path")
     
+    # Check if release exists
     if [ "$DRY_RUN" = false ]; then
-      if gh release view "v$version" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
-          print_warning "Asset '$artifact_name' already exists on release v$version. Deleting it first."
-          execute "gh" "release" "delete-asset" "v$version" "$artifact_name" "--yes"
-      fi
+        if ! gh release view "$version" > /dev/null 2>&1; then
+            print_error "Release $version does not exist. Cannot upload artifact."
+            return 1
+        fi
+        
+        # Check if asset already exists and delete it
+        if gh release view "$version" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
+            print_warning "Asset '$artifact_name' already exists on release $version. Deleting it first."
+            execute "gh" "release" "delete-asset" "$version" "$artifact_name" "--yes"
+        fi
     fi
 
-    execute "gh" "release" "upload" "v$version" "$artifact_path"
-    print_success "Artifact uploaded successfully."
+    # Upload with retry logic
+    local attempt=1
+    local max_attempts=3
+    
+    while [ $attempt -le $max_attempts ]; do
+        print_info "Upload attempt $attempt of $max_attempts..."
+        
+        if execute "gh" "release" "upload" "$version" "$artifact_path"; then
+            print_success "Artifact uploaded successfully!"
+            return 0
+        else
+            if [ $attempt -eq $max_attempts ]; then
+                print_error "Failed to upload artifact after $max_attempts attempts."
+                return 1
+            else
+                print_warning "Upload attempt $attempt failed. Retrying in 5 seconds..."
+                sleep 5
+            fi
+        fi
+        attempt=$((attempt + 1))
+    done
 }
 
 revert_version_changes() {
@@ -421,6 +453,12 @@ upload_only_main() {
     local project_name=$(get_project_info)
     print_info "Project name: $project_name"
 
+    # Get the latest release version from GitHub to ensure VERSION file is in sync
+    local latest_release_version=""
+    if [ "$DRY_RUN" = false ]; then
+        latest_release_version=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null | sed 's/^v//')
+    fi
+
     local current_version
     if [[ -f "$VERSION_FILE" ]]; then
         current_version=$(cat "$VERSION_FILE")
@@ -432,6 +470,15 @@ upload_only_main() {
         print_error "Could not determine current version."
         exit 1
     fi
+
+    # If we found a latest release version and it's different from VERSION file, update it
+    if [[ -n "$latest_release_version" && "$latest_release_version" != "$current_version" ]]; then
+        print_warning "VERSION file ($current_version) is out of sync with latest release ($latest_release_version)."
+        print_info "Updating VERSION file to match latest release..."
+        execute "echo" "$latest_release_version" ">" "$VERSION_FILE"
+        current_version="$latest_release_version"
+    fi
+
     print_info "Using current version: $current_version"
 
     if [ "$DRY_RUN" = false ]; then
@@ -529,6 +576,7 @@ main() {
         exit 0
     fi
 
+    # Update VERSION file and project version
     execute "echo" "$new_version" ">" "$VERSION_FILE"
     update_version "$new_version"
 
@@ -550,6 +598,27 @@ main() {
             rollback_git_changes "$new_version"
         fi
         exit 1
+    fi
+
+    # Always ensure the JAR is uploaded to the release
+    if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
+        print_info "Ensuring JAR is uploaded to release..."
+        if ! upload_artifact_to_release "v$new_version" "$artifact_path"; then
+            print_warning "Failed to upload JAR to release. You may need to upload it manually:"
+            print_info "gh release upload v$new_version '$artifact_path'"
+        fi
+    fi
+
+    # Ensure VERSION file is committed and pushed
+    if [[ -f "$VERSION_FILE" ]]; then
+        local version_in_file=$(cat "$VERSION_FILE")
+        if [[ "$version_in_file" != "$new_version" ]]; then
+            print_warning "VERSION file contains $version_in_file but release was $new_version. Updating..."
+            execute "echo" "$new_version" ">" "$VERSION_FILE"
+            execute "git" "add" "$VERSION_FILE"
+            execute "git" "commit" "-m" "Update VERSION file to $new_version"
+            execute "git" "push"
+        fi
     fi
 
     run_plugins "post-release"
