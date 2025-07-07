@@ -24,3 +24,5 @@ Thumbs.db
 *.iml
 release.sh
 .release.conf
+.release-exec
+
