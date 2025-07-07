@@ -52,6 +52,22 @@
                     <span class="block sm:inline" th:text="${message}"></span>
                 </div>
 
+                <!-- Reset and Status Section -->
+                <div class="mt-8 mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-medium text-gray-900">File Processing Status</h3>
+                        <button id="resetBtn" 
+                                class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200"
+                                onclick="resetProcessedFiles()">
+                            Reset Processed Files
+                        </button>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <p>This will clear the tracking of processed files, allowing all files to be reprocessed on the next poll cycle.</p>
+                        <p class="mt-2">Current processed files count: <span id="processedCount" class="font-medium">Loading...</span></p>
+                    </div>
+                </div>
+
                 <!-- File List -->
                 <div class="mt-8">
                     <div th:if="${hdfsDisconnected}" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
@@ -83,6 +99,9 @@
             const form = document.createElement('form');
             form.method = 'post';
             form.enctype = 'multipart/form-data';
+            
+            // Load initial status
+            loadProcessedFilesStatus();
             
             // Handle click on drop zone
             dropZone.addEventListener('click', () => fileInput.click());
@@ -152,6 +171,59 @@
                     console.error('Error:', error);
                 });
             }
+            
+            // Load processed files status
+            function loadProcessedFilesStatus() {
+                fetch('/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.processedFilesCount !== undefined) {
+                            document.getElementById('processedCount').textContent = data.processedFilesCount;
+                        } else {
+                            document.getElementById('processedCount').textContent = 'Error loading status';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading status:', error);
+                        document.getElementById('processedCount').textContent = 'Error loading status';
+                    });
+            }
+            
+            // Reset processed files
+            window.resetProcessedFiles = function() {
+                if (!confirm('Are you sure you want to reset the processed files tracking? This will allow all files to be reprocessed on the next poll cycle.')) {
+                    return;
+                }
+                
+                const resetBtn = document.getElementById('resetBtn');
+                const originalText = resetBtn.textContent;
+                resetBtn.textContent = 'Resetting...';
+                resetBtn.disabled = true;
+                
+                fetch('/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(`Successfully reset processed files tracking. Cleared ${data.clearedCount} previously processed files.`);
+                        loadProcessedFilesStatus(); // Refresh the count
+                    } else {
+                        alert('Failed to reset processed files: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error resetting processed files:', error);
+                    alert('Failed to reset processed files. Please try again.');
+                })
+                .finally(() => {
+                    resetBtn.textContent = originalText;
+                    resetBtn.disabled = false;
+                });
+            };
         });
     </script>
 </body>

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -27,15 +28,18 @@ public class FileUploadController {
     private final HdfsWatcherProperties properties;
     private final WebHdfsService webHdfsService;
     private final HdfsWatcherOutput output;
+    private final HdfsWatcherService hdfsWatcherService;
 
     public FileUploadController(LocalFileService storageService, 
                               HdfsWatcherProperties properties,
                               WebHdfsService webHdfsService,
-                              HdfsWatcherOutput output) {
+                              HdfsWatcherOutput output,
+                              HdfsWatcherService hdfsWatcherService) {
         this.storageService = validateService(storageService, "LocalFileService");
         this.properties = validateService(properties, "HdfsWatcherProperties");
         this.webHdfsService = validateService(webHdfsService, "WebHdfsService");
         this.output = validateService(output, "HdfsWatcherOutput");
+        this.hdfsWatcherService = validateService(hdfsWatcherService, "HdfsWatcherService");
         
         String mode = properties.getMode();
         boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
@@ -211,6 +215,59 @@ public class FileUploadController {
      */
     private String processLocalUpload(MultipartFile file) {
         return storageService.store(file);
+    }
+
+    /**
+     * Resets the processed files tracking, allowing all files to be reprocessed.
+     * 
+     * @return JSON response with reset status
+     */
+    @PostMapping("/reset")
+    @ResponseBody
+    public ResponseEntity<Object> resetProcessedFiles() {
+        try {
+            int previousCount = hdfsWatcherService.getProcessedFilesCount();
+            hdfsWatcherService.resetProcessedFiles();
+            
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Processed files tracking has been reset",
+                "clearedCount", previousCount,
+                "timestamp", System.currentTimeMillis()
+            ));
+        } catch (Exception e) {
+            logger.error("Failed to reset processed files", e);
+            return ResponseEntity.status(500).body(Map.of(
+                "success", false,
+                "message", "Failed to reset processed files: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            ));
+        }
+    }
+    
+    /**
+     * Gets the current count of processed files being tracked.
+     * 
+     * @return JSON response with processed files count
+     */
+    @GetMapping("/status")
+    @ResponseBody
+    public ResponseEntity<Object> getProcessedFilesStatus() {
+        try {
+            int count = hdfsWatcherService.getProcessedFilesCount();
+            
+            return ResponseEntity.ok(Map.of(
+                "processedFilesCount", count,
+                "timestamp", System.currentTimeMillis()
+            ));
+        } catch (Exception e) {
+            logger.error("Failed to get processed files status", e);
+            return ResponseEntity.status(500).body(Map.of(
+                "success", false,
+                "message", "Failed to get processed files status: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            ));
+        }
     }
 
     /**

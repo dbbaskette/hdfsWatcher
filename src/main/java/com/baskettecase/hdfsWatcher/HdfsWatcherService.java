@@ -284,6 +284,23 @@ public class HdfsWatcherService {
     }
     
     /**
+     * Resets the processed files tracking, allowing all files to be reprocessed.
+     * This is useful for testing or when you want to reprocess all files.
+     */
+    public void resetProcessedFiles() {
+        int previousCount = seenFiles.size();
+        seenFiles.clear();
+        logger.info("Reset processed files tracking. Cleared {} previously processed files.", previousCount);
+    }
+    
+    /**
+     * Gets the count of currently tracked processed files.
+     */
+    public int getProcessedFilesCount() {
+        return seenFiles.size();
+    }
+    
+    /**
      * Builds properly encoded path from HDFS path.
      */
     private String buildEncodedPath(org.apache.hadoop.fs.Path path) {
