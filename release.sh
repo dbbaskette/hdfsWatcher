@@ -110,10 +110,81 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         --dry-run) DRY_RUN=true ;;
         --upload-only) UPLOAD_ONLY=true ;;
+        --no-update) SKIP_UPDATE=true ;;
         *) print_error "Unknown parameter passed: $1"; exit 1 ;;
     esac
     shift
 done
+
+# ==============================================================================
+# SELF-UPDATE MECHANISM
+# ==============================================================================
+
+self_update() {
+    # Only update if we're in a git repository and not in dry-run mode
+    if [[ "$DRY_RUN" = true || "$SKIP_UPDATE" = true ]]; then
+        return 0
+    fi
+
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        return 0
+    fi
+
+    # Get the current script path
+    local script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+    
+    # Check if there are remote changes
+    local current_commit=$(git rev-parse HEAD 2>/dev/null)
+    local remote_commit=$(git ls-remote origin HEAD 2>/dev/null | cut -f1)
+    
+    if [[ -n "$current_commit" && -n "$remote_commit" && "$current_commit" != "$remote_commit" ]]; then
+        print_info "New version of release.sh available. Updating..."
+        
+        # Fetch latest changes
+        if git fetch origin > /dev/null 2>&1; then
+            # Get the latest version of the script
+            local temp_script=$(mktemp)
+            if git show "origin/HEAD:release.sh" > "$temp_script" 2>/dev/null; then
+                # Make it executable
+                chmod +x "$temp_script"
+                
+                # Replace the current script with the updated version
+                if mv "$temp_script" "$script_path"; then
+                    print_success "Updated release.sh to latest version"
+                    
+                    # Re-execute the updated script with the same arguments
+                    exec "$script_path" "$@"
+                else
+                    print_warning "Failed to update script, continuing with current version"
+                    rm -f "$temp_script"
+                fi
+            else
+                print_warning "Failed to fetch updated script, continuing with current version"
+                rm -f "$temp_script"
+            fi
+        else
+            print_warning "Failed to fetch updates, continuing with current version"
+        fi
+    fi
+}
+
+get_script_version() {
+    if git rev-parse --git-dir > /dev/null 2>&1; then
+        local commit_hash=$(git rev-parse --short HEAD 2>/dev/null)
+        local commit_date=$(git log -1 --format="%cd" --date=short 2>/dev/null)
+        if [[ -n "$commit_hash" && -n "$commit_date" ]]; then
+            echo "v$commit_hash ($commit_date)"
+        else
+            echo "unknown"
+        fi
+    else
+        echo "standalone"
+    fi
+}
+
+# Run self-update check
+self_update "$@"
 
 # ==============================================================================
 # PROJECT DETECTION AND BUILD TOOL MANAGEMENT
@@ -149,6 +220,7 @@ detect_main_branch() {
         return
     fi
 
+    # Check for main or master branch, treat them as equivalent
     if git show-ref --verify --quiet refs/heads/main; then
         MAIN_BRANCH="main"
     elif git show-ref --verify --quiet refs/heads/master; then
@@ -208,7 +280,21 @@ build_project() {
                 build_cmd="$build_cmd -DskipTests"
             fi
             execute $build_cmd
-            echo "target/${artifact_id}-${version}.jar"
+            
+            # Look for the actual JAR file (Spring Boot creates repackaged JARs)
+            local expected_jar="target/${artifact_id}-${version}.jar"
+            if [[ -f "$expected_jar" ]]; then
+                echo "$expected_jar"
+            else
+                # Look for any JAR file in target directory
+                local found_jar=$(find target -name "*.jar" -type f | head -1)
+                if [[ -n "$found_jar" ]]; then
+                    echo "$found_jar"
+                else
+                    print_error "No JAR file found in target directory"
+                    return 1
+                fi
+            fi
             ;;
         "gradle")
             local build_cmd="./gradlew build"
@@ -216,7 +302,21 @@ build_project() {
                 build_cmd="$build_cmd -x test"
             fi
             execute $build_cmd
-            echo "build/libs/${artifact_id}-${version}.jar"
+            
+            # Look for the actual JAR file
+            local expected_jar="build/libs/${artifact_id}-${version}.jar"
+            if [[ -f "$expected_jar" ]]; then
+                echo "$expected_jar"
+            else
+                # Look for any JAR file in build/libs directory
+                local found_jar=$(find build/libs -name "*.jar" -type f | head -1)
+                if [[ -n "$found_jar" ]]; then
+                    echo "$found_jar"
+                else
+                    print_error "No JAR file found in build/libs directory"
+                    return 1
+                fi
+            fi
             ;;
     esac
 }
@@ -274,7 +374,8 @@ check_git_status() {
     fi
     execute "git" "fetch" "--all"
     local current_branch=$(git branch --show-current)
-    if [[ "$current_branch" != "$MAIN_BRANCH" ]]; then
+    # Treat main and master as equivalent
+    if [[ "$current_branch" != "$MAIN_BRANCH" && "$current_branch" != "main" && "$current_branch" != "master" ]]; then
         print_warning "You are not on the main branch ($MAIN_BRANCH). This is the branch that will be tagged for release."
         read -p "Do you want to continue? (y/N): " continue_choice
         if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
@@ -357,7 +458,9 @@ create_github_release_with_retry() {
         # Always attempt to upload the artifact separately if it exists
         if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
             print_info "Attempting to upload artifact separately..."
-            if upload_artifact_to_release "$version" "$artifact_path"; then
+            # Extract version number without 'v' prefix for upload function
+            local version_number="${version#v}"
+            if upload_artifact_to_release "$version_number" "$artifact_path"; then
                 print_success "Artifact uploaded successfully after release creation!"
             else
                 print_warning "Failed to upload artifact separately. Manual upload may be needed:"
@@ -380,20 +483,26 @@ upload_artifact_to_release() {
         return 1
     fi
 
-    print_info "Uploading artifact to release v$version..."
+    # Ensure version has 'v' prefix for GitHub releases
+    local release_tag="$version"
+    if [[ ! "$release_tag" =~ ^v ]]; then
+        release_tag="v$version"
+    fi
+
+    print_info "Uploading artifact to release $release_tag..."
     local artifact_name=$(basename "$artifact_path")
     
     # Check if release exists
     if [ "$DRY_RUN" = false ]; then
-        if ! gh release view "$version" > /dev/null 2>&1; then
-            print_error "Release $version does not exist. Cannot upload artifact."
+        if ! gh release view "$release_tag" > /dev/null 2>&1; then
+            print_error "Release $release_tag does not exist. Cannot upload artifact."
             return 1
         fi
         
         # Check if asset already exists and delete it
-        if gh release view "$version" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
-            print_warning "Asset '$artifact_name' already exists on release $version. Deleting it first."
-            execute "gh" "release" "delete-asset" "$version" "$artifact_name" "--yes"
+        if gh release view "$release_tag" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
+            print_warning "Asset '$artifact_name' already exists on release $release_tag. Deleting it first."
+            execute "gh" "release" "delete-asset" "$release_tag" "$artifact_name" "--yes"
         fi
     fi
 
@@ -404,8 +513,18 @@ upload_artifact_to_release() {
     while [ $attempt -le $max_attempts ]; do
         print_info "Upload attempt $attempt of $max_attempts..."
         
-        if execute "gh" "release" "upload" "$version" "$artifact_path"; then
+        if execute "gh" "release" "upload" "$release_tag" "$artifact_path"; then
             print_success "Artifact uploaded successfully!"
+            
+            # Verify the upload was successful
+            if [ "$DRY_RUN" = false ]; then
+                if gh release view "$release_tag" --json assets --jq ".assets[] | select(.name == \"$artifact_name\")" | grep -q name; then
+                    print_success "Upload verification successful: $artifact_name found on release $release_tag"
+                else
+                    print_warning "Upload verification failed: $artifact_name not found on release $release_tag"
+                fi
+            fi
+            
             return 0
         else
             if [ $attempt -eq $max_attempts ]; then
@@ -442,7 +561,8 @@ rollback_git_changes() {
 # ==============================================================================
 
 upload_only_main() {
-    print_info "=== Upload-Only Release Mode ==="
+    local script_version=$(get_script_version)
+    print_info "=== Upload-Only Release Mode ($script_version) ==="
     if [ "$DRY_RUN" = true ]; then
         print_warning "Running in dry-run mode. No changes will be made."
     fi
@@ -451,6 +571,10 @@ upload_only_main() {
     check_requirements
 
     local project_name=$(get_project_info)
+    if [[ -z "$project_name" ]]; then
+        print_error "Could not determine project name. Please check your pom.xml or build.gradle file."
+        exit 1
+    fi
     print_info "Project name: $project_name"
 
     # Get the latest release version from GitHub to ensure VERSION file is in sync
@@ -492,7 +616,7 @@ upload_only_main() {
     local artifact_path=$(build_project "$current_version" "$project_name")
     run_plugins "post-build"
 
-    upload_artifact_to_release "v$current_version" "$artifact_path"
+    upload_artifact_to_release "$current_version" "$artifact_path"
 
     print_success "Artifact for v$current_version has been successfully uploaded."
 }
@@ -505,7 +629,8 @@ main() {
 
     trap 'run_plugins "on-error"' ERR
 
-    print_info "=== Generic Project Release Script ==="
+    local script_version=$(get_script_version)
+    print_info "=== Generic Project Release Script ($script_version) ==="
     if [ "$DRY_RUN" = true ]; then
         print_warning "Running in dry-run mode. No changes will be made."
     fi
@@ -518,6 +643,10 @@ main() {
     check_git_status
 
     local project_name=$(get_project_info)
+    if [[ -z "$project_name" ]]; then
+        print_error "Could not determine project name. Please check your pom.xml or build.gradle file."
+        exit 1
+    fi
     print_info "Project name: $project_name"
 
     local current_version
@@ -603,7 +732,7 @@ main() {
     # Always ensure the JAR is uploaded to the release
     if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
         print_info "Ensuring JAR is uploaded to release..."
-        if ! upload_artifact_to_release "v$new_version" "$artifact_path"; then
+        if ! upload_artifact_to_release "$new_version" "$artifact_path"; then
             print_warning "Failed to upload JAR to release. You may need to upload it manually:"
             print_info "gh release upload v$new_version '$artifact_path'"
         fi
