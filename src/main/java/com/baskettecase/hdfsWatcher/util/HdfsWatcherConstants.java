@@ -48,6 +48,7 @@ public final class HdfsWatcherConstants {
     public static final String WEBHDFS_OP_LISTSTATUS = "LISTSTATUS";
     public static final String WEBHDFS_OP_CREATE = "CREATE";
     public static final String WEBHDFS_OP_OPEN = "OPEN";
+    public static final String WEBHDFS_OP_GETFILESTATUS = "GETFILESTATUS";
     
     // HTTP status codes
     public static final int HTTP_TEMPORARY_REDIRECT = 307;

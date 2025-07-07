@@ -1,5 +1,6 @@
 package com.baskettecase.hdfsWatcher;
 
+import com.baskettecase.hdfsWatcher.service.ProcessedFilesService;
 import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
 import com.baskettecase.hdfsWatcher.util.UrlUtils;
 import org.slf4j.Logger;
@@ -12,8 +13,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -29,17 +29,20 @@ public class FileUploadController {
     private final WebHdfsService webHdfsService;
     private final HdfsWatcherOutput output;
     private final HdfsWatcherService hdfsWatcherService;
+    private final ProcessedFilesService processedFilesService;
 
     public FileUploadController(LocalFileService storageService, 
                               HdfsWatcherProperties properties,
                               WebHdfsService webHdfsService,
                               HdfsWatcherOutput output,
-                              HdfsWatcherService hdfsWatcherService) {
+                              HdfsWatcherService hdfsWatcherService,
+                              ProcessedFilesService processedFilesService) {
         this.storageService = validateService(storageService, "LocalFileService");
         this.properties = validateService(properties, "HdfsWatcherProperties");
         this.webHdfsService = validateService(webHdfsService, "WebHdfsService");
         this.output = validateService(output, "HdfsWatcherOutput");
         this.hdfsWatcherService = validateService(hdfsWatcherService, "HdfsWatcherService");
+        this.processedFilesService = validateService(processedFilesService, "ProcessedFilesService");
         
         String mode = properties.getMode();
         boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
@@ -218,13 +221,222 @@ public class FileUploadController {
     }
 
     /**
-     * Handles runtime exceptions with proper logging.
+     * Enhanced status endpoint with comprehensive app status.
      * 
-     * @param exc the runtime exception
-     * @return the error response
+     * @return JSON response with detailed status information
      */
+    @GetMapping("/api/status")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getDetailedStatus() {
+        try {
+            String mode = properties.getMode();
+            boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            
+            // Get file listing
+            List<String> files = new ArrayList<>();
+            boolean hdfsDisconnected = false;
+            
+            try {
+                if (isLocalMode) {
+                    files = storageService.loadAll()
+                        .map(path -> path.getFileName().toString())
+                        .collect(Collectors.toList());
+                } else {
+                    files = webHdfsService.listFiles();
+                }
+            } catch (Exception e) {
+                logger.error("Error listing files for status", e);
+                hdfsDisconnected = !isLocalMode;
+            }
+            
+            // Get processed files info
+            int processedCount = processedFilesService.getProcessedFilesCount();
+            Set<String> processedHashes = processedFilesService.getAllProcessedFiles();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("mode", mode);
+            response.put("isLocalMode", isLocalMode);
+            response.put("hdfsDisconnected", hdfsDisconnected);
+            response.put("totalFiles", files.size());
+            response.put("processedFilesCount", processedCount);
+            response.put("processedFilesHashes", processedHashes);
+            response.put("timestamp", System.currentTimeMillis());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error getting detailed status", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
     /**
-     * Gets the current status of processed files.
+     * Gets detailed file listing with processing status.
+     * 
+     * @return JSON response with file details and processing status
+     */
+    @GetMapping("/api/files")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getFilesWithStatus() {
+        try {
+            String mode = properties.getMode();
+            boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            
+            List<Map<String, Object>> fileDetails = new ArrayList<>();
+            boolean hdfsDisconnected = false;
+            
+            try {
+                if (isLocalMode) {
+                    // For local mode, we'll create basic file details
+                    List<String> files = storageService.loadAll()
+                        .map(path -> path.getFileName().toString())
+                        .collect(Collectors.toList());
+                    
+                    for (String filename : files) {
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("filename", filename);
+                        fileInfo.put("processed", false); // Default for local mode
+                        fileInfo.put("hash", ""); // No hash tracking in local mode
+                        fileInfo.put("size", 0L); // No size info in local mode
+                        fileInfo.put("modificationTime", 0L); // No time info in local mode
+                        fileDetails.add(fileInfo);
+                    }
+                } else {
+                    // Use WebHDFS for detailed file information
+                    List<Map<String, Object>> hdfsFiles = webHdfsService.listFilesWithDetails();
+                    
+                    for (Map<String, Object> hdfsFile : hdfsFiles) {
+                        String filename = (String) hdfsFile.get("filename");
+                        Long size = (Long) hdfsFile.get("size");
+                        Long modificationTime = (Long) hdfsFile.get("modificationTime");
+                        
+                        // Generate hash for this file
+                        String fileHash = processedFilesService.generateFileHash(filename, size, modificationTime);
+                        boolean isProcessed = processedFilesService.isFileProcessed(fileHash);
+                        
+                        Map<String, Object> fileInfo = new HashMap<>(hdfsFile);
+                        fileInfo.put("processed", isProcessed);
+                        fileInfo.put("hash", fileHash);
+                        
+                        fileDetails.add(fileInfo);
+                    }
+                }
+                
+            } catch (Exception e) {
+                logger.error("Error listing files", e);
+                hdfsDisconnected = !isLocalMode;
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("files", fileDetails);
+            response.put("totalFiles", fileDetails.size());
+            response.put("hdfsDisconnected", hdfsDisconnected);
+            response.put("mode", mode);
+            response.put("timestamp", System.currentTimeMillis());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error getting files with status", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    /**
+     * Reprocesses specific files by clearing their processed status.
+     * 
+     * @param request JSON with file hashes to reprocess
+     * @return JSON response with reprocessing results
+     */
+    @PostMapping("/api/reprocess")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> reprocessFiles(@RequestBody Map<String, Object> request) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<String> fileHashes = (List<String>) request.get("fileHashes");
+            
+            if (fileHashes == null || fileHashes.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "status", "error",
+                    "message", "No file hashes provided for reprocessing"
+                ));
+            }
+            
+            int reprocessedCount = 0;
+            List<String> reprocessedHashes = new ArrayList<>();
+            
+            for (String hash : fileHashes) {
+                if (processedFilesService.isFileProcessed(hash)) {
+                    processedFilesService.markFileForReprocessing(hash);
+                    reprocessedCount++;
+                    reprocessedHashes.add(hash);
+                }
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("reprocessedCount", reprocessedCount);
+            response.put("reprocessedHashes", reprocessedHashes);
+            response.put("message", "Successfully marked " + reprocessedCount + " files for reprocessing");
+            response.put("timestamp", System.currentTimeMillis());
+            
+            logger.info("Reprocessed {} files", reprocessedCount);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error reprocessing files", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to reprocess files: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    /**
+     * Clears all processed files tracking.
+     * 
+     * @return JSON response with clearing results
+     */
+    @PostMapping("/api/clear")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> clearAllProcessedFiles() {
+        try {
+            int clearedCount = processedFilesService.clearAllProcessedFiles();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("clearedCount", clearedCount);
+            response.put("message", "Successfully cleared " + clearedCount + " processed files");
+            response.put("timestamp", System.currentTimeMillis());
+            
+            logger.info("Cleared {} processed files", clearedCount);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error clearing processed files", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to clear processed files: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    /**
+     * Gets the current status of processed files (legacy endpoint).
      * 
      * @return JSON response with processed files count
      */
@@ -250,7 +462,7 @@ public class FileUploadController {
     }
     
     /**
-     * Clears all processed files tracking.
+     * Clears all processed files tracking (legacy endpoint).
      * 
      * @return JSON response with the number of files cleared
      */

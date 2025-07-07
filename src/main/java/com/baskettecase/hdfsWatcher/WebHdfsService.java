@@ -18,7 +18,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Service for WebHDFS operations with proper logging and validation.
@@ -84,6 +86,102 @@ public class WebHdfsService {
             throw new RuntimeException("Failed to list files from WebHDFS", e);
         }
     }
+
+    /**
+     * Lists files with detailed metadata from WebHDFS.
+     * 
+     * @return list of file details with metadata
+     * @throws IllegalStateException if configuration is invalid
+     * @throws RuntimeException if WebHDFS operation fails
+     */
+    public List<Map<String, Object>> listFilesWithDetails() {
+        validateConfiguration();
+        
+        String baseUrl = properties.getWebhdfsUri();
+        String hdfsPath = properties.getHdfsPath();
+        String user = properties.getHdfsUser();
+        
+        // Normalize URLs
+        baseUrl = baseUrl.replaceAll("/+$", "");
+        if (!hdfsPath.startsWith("/")) {
+            hdfsPath = "/" + hdfsPath;
+        }
+        
+        String url = String.format("%s%s%s?op=%s&user.name=%s", 
+            baseUrl, 
+            HdfsWatcherConstants.WEBHDFS_PATH,
+            hdfsPath, 
+            HdfsWatcherConstants.WEBHDFS_OP_LISTSTATUS, 
+            user);
+        
+        logger.debug("{} Listing files with details from URL: {}", HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, url);
+        
+        try {
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            
+            if (response.getStatusCode().is2xxSuccessful()) {
+                List<Map<String, Object>> fileDetails = parseFileListWithDetailsResponse(response.getBody());
+                logger.info("Successfully listed {} files with details from WebHDFS path: {}", fileDetails.size(), hdfsPath);
+                return fileDetails;
+            } else {
+                logger.error("WebHDFS LISTSTATUS failed with status: {}", response.getStatusCode());
+                throw new RuntimeException("WebHDFS LISTSTATUS failed: " + response.getStatusCode());
+            }
+        } catch (Exception e) {
+            logger.error("Failed to list files with details from WebHDFS path: {}", hdfsPath, e);
+            throw new RuntimeException("Failed to list files with details from WebHDFS", e);
+        }
+    }
+
+    /**
+     * Gets detailed information for a specific file.
+     * 
+     * @param filename the name of the file
+     * @return file details with metadata
+     * @throws IllegalArgumentException if filename is invalid
+     * @throws RuntimeException if WebHDFS operation fails
+     */
+    public Map<String, Object> getFileDetails(String filename) {
+        validateConfiguration();
+        validateDownloadFilename(filename);
+        
+        String baseUrl = properties.getWebhdfsUri();
+        String hdfsPath = properties.getHdfsPath();
+        String user = properties.getHdfsUser();
+        
+        // Normalize paths
+        baseUrl = baseUrl.replaceAll("/+$", "");
+        if (!hdfsPath.startsWith("/")) {
+            hdfsPath = "/" + hdfsPath;
+        }
+        
+        String url = String.format("%s%s%s/%s?op=%s&user.name=%s", 
+            baseUrl, 
+            HdfsWatcherConstants.WEBHDFS_PATH,
+            hdfsPath, 
+            filename, 
+            HdfsWatcherConstants.WEBHDFS_OP_GETFILESTATUS, 
+            user);
+        
+        logger.debug("{} Getting file details for: {} from URL: {}", 
+            HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, filename, url);
+        
+        try {
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            
+            if (response.getStatusCode().is2xxSuccessful()) {
+                Map<String, Object> fileDetails = parseFileStatusResponse(response.getBody(), filename);
+                logger.debug("Successfully retrieved file details for: {}", filename);
+                return fileDetails;
+            } else {
+                logger.error("WebHDFS GETFILESTATUS failed for file '{}' with status: {}", filename, response.getStatusCode());
+                throw new RuntimeException("WebHDFS GETFILESTATUS failed: " + response.getStatusCode());
+            }
+        } catch (Exception e) {
+            logger.error("Failed to get file details for '{}' from WebHDFS", filename, e);
+            throw new RuntimeException("Failed to get file details from WebHDFS", e);
+        }
+    }
     
     /**
      * Validates properties configuration.
@@ -123,6 +221,53 @@ public class WebHdfsService {
         }
         
         return files;
+    }
+
+    /**
+     * Parses the WebHDFS file list response with detailed metadata.
+     */
+    private List<Map<String, Object>> parseFileListWithDetailsResponse(String responseBody) throws IOException {
+        JsonNode root = objectMapper.readTree(responseBody);
+        List<Map<String, Object>> fileDetails = new ArrayList<>();
+        
+        JsonNode fileStatuses = root.path("FileStatuses").path("FileStatus");
+        for (JsonNode fileNode : fileStatuses) {
+            Map<String, Object> fileInfo = new HashMap<>();
+            
+            String filename = fileNode.path("pathSuffix").asText();
+            if (filename != null && !filename.isEmpty()) {
+                fileInfo.put("filename", filename);
+                fileInfo.put("size", fileNode.path("length").asLong());
+                fileInfo.put("modificationTime", fileNode.path("modificationTime").asLong());
+                fileInfo.put("permission", fileNode.path("permission").asText());
+                fileInfo.put("owner", fileNode.path("owner").asText());
+                fileInfo.put("group", fileNode.path("group").asText());
+                fileInfo.put("type", fileNode.path("type").asText());
+                
+                fileDetails.add(fileInfo);
+            }
+        }
+        
+        return fileDetails;
+    }
+
+    /**
+     * Parses the WebHDFS file status response for a single file.
+     */
+    private Map<String, Object> parseFileStatusResponse(String responseBody, String filename) throws IOException {
+        JsonNode root = objectMapper.readTree(responseBody);
+        JsonNode fileStatus = root.path("FileStatus");
+        
+        Map<String, Object> fileInfo = new HashMap<>();
+        fileInfo.put("filename", filename);
+        fileInfo.put("size", fileStatus.path("length").asLong());
+        fileInfo.put("modificationTime", fileStatus.path("modificationTime").asLong());
+        fileInfo.put("permission", fileStatus.path("permission").asText());
+        fileInfo.put("owner", fileStatus.path("owner").asText());
+        fileInfo.put("group", fileStatus.path("group").asText());
+        fileInfo.put("type", fileStatus.path("type").asText());
+        
+        return fileInfo;
     }
 
     /**
