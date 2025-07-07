@@ -250,7 +250,32 @@ get_project_info() {
 get_current_version() {
     case "$BUILD_TOOL" in
         "maven")
-            xmlstarlet sel -N pom=http://maven.apache.org/POM/4.0.0 -t -v "/pom:project/pom:version" pom.xml
+            # Try multiple approaches to get version from pom.xml
+            local version=""
+            
+            # Method 1: Using xmlstarlet with namespace
+            version=$(xmlstarlet sel -N pom=http://maven.apache.org/POM/4.0.0 -t -v "/pom:project/pom:version" pom.xml 2>/dev/null)
+            if [[ -n "$version" ]]; then
+                echo "$version"
+                return 0
+            fi
+            
+            # Method 2: Using xmlstarlet without namespace
+            version=$(xmlstarlet sel -t -v "/project/version" pom.xml 2>/dev/null)
+            if [[ -n "$version" ]]; then
+                echo "$version"
+                return 0
+            fi
+            
+            # Method 3: Using grep as fallback
+            version=$(grep -oP "<version>\K[^<]+" pom.xml | head -1)
+            if [[ -n "$version" ]]; then
+                echo "$version"
+                return 0
+            fi
+            
+            print_error "Could not extract version from pom.xml"
+            return 1
             ;;
         "gradle")
             grep -oP "version = '\K[^']+" build.gradle.kts
@@ -662,10 +687,16 @@ main() {
     print_info "Project name: $project_name"
 
     # Sync VERSION file with pom.xml to prevent mismatches
+    print_info "=== Version Detection Debug ==="
     local pom_version=$(get_current_version)
+    print_info "POM version detected: ${pom_version:-"FAILED"}"
+    
     local file_version=""
     if [[ -f "$VERSION_FILE" ]]; then
-        file_version=$(cat "$VERSION_FILE")
+        file_version=$(cat "$VERSION_FILE" | tr -d ' \n\r')
+        print_info "VERSION file content: ${file_version:-"EMPTY"}"
+    else
+        print_info "VERSION file does not exist"
     fi
     
     local current_version="$pom_version"
@@ -674,15 +705,18 @@ main() {
         print_info "Using POM version as authoritative source and updating VERSION file..."
         execute "echo" "$pom_version" ">" "$VERSION_FILE"
         current_version="$pom_version"
+        print_info "VERSION file updated to: $current_version"
     elif [[ -z "$current_version" && -n "$file_version" ]]; then
+        print_info "No POM version found, using VERSION file: $file_version"
         current_version="$file_version"
     elif [[ -z "$current_version" ]]; then
         print_warning "No version found. Using default: $DEFAULT_STARTING_VERSION"
         current_version=$DEFAULT_STARTING_VERSION
         execute "echo" "$current_version" ">" "$VERSION_FILE"
+        print_info "Created VERSION file with default: $current_version"
     fi
     
-    print_info "Current version: $current_version (POM: ${pom_version:-"N/A"}, File: ${file_version:-"N/A"})"
+    print_info "Final current version: $current_version (POM: ${pom_version:-"N/A"}, File: ${file_version:-"N/A"})"
 
     echo "Version options:"
     echo "1) patch ($(increment_version "$current_version" "patch"))"
@@ -727,9 +761,21 @@ main() {
         exit 0
     fi
 
-    # Update VERSION file and project version
+    # STEP 1: Update VERSION file and project version FIRST
+    print_info "=== Step 1: Updating versions ==="
     execute "echo" "$new_version" ">" "$VERSION_FILE"
+    print_info "Updated VERSION file to: $new_version"
+    
     update_version "$new_version"
+    print_info "Updated POM version to: $new_version"
+    
+    # Verify the version was updated correctly
+    local verify_version=$(get_current_version)
+    print_info "Verified POM version: ${verify_version:-"FAILED"}"
+    if [[ "$verify_version" != "$new_version" ]]; then
+        print_error "Version update failed! POM still shows: $verify_version"
+        exit 1
+    fi
 
     run_plugins "pre-commit"
     execute "git" "add" "."
@@ -739,15 +785,26 @@ main() {
     execute "git" "tag" "-a" "v$new_version" "-m" "$commit_msg"
     execute "git" "push" "origin" "v$new_version"
 
+    # STEP 4: Build project with the updated version
+    print_info "=== Step 4: Building project ==="
     local artifact_path=$(build_project "$new_version" "$project_name")
     run_plugins "post-build"
     
-    # Ensure VERSION file matches the actual version used in build
-    local actual_version=$(get_current_version)
-    if [[ -n "$actual_version" && "$actual_version" != "$new_version" ]]; then
-        print_warning "POM version ($actual_version) differs from target version ($new_version). Syncing..."
-        new_version="$actual_version"
-        execute "echo" "$new_version" ">" "$VERSION_FILE"
+    # Verify the JAR was built with the correct version
+    if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
+        print_info "JAR built successfully: $artifact_path"
+        print_info "JAR size: $(du -h "$artifact_path" | cut -f1)"
+        
+        # Check if JAR filename contains the correct version
+        local jar_filename=$(basename "$artifact_path")
+        if [[ "$jar_filename" =~ $new_version ]]; then
+            print_success "JAR filename contains correct version: $jar_filename"
+        else
+            print_warning "JAR filename may not contain correct version: $jar_filename"
+        fi
+    else
+        print_error "JAR build failed or file not found: $artifact_path"
+        exit 1
     fi
 
     # Check if release already exists
@@ -764,11 +821,25 @@ main() {
         fi
     fi
 
-    # ALWAYS ensure the JAR is uploaded to the release (regardless of whether release was created or existed)
-    print_info "=== JAR Upload Phase ==="
+    # STEP 5: Upload JAR to GitHub release
+    print_info "=== Step 5: JAR Upload Phase ==="
+    print_info "Release version: $new_version"
+    print_info "JAR file path: $artifact_path"
+    
     if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
-        print_info "JAR file path: $artifact_path"
-        print_info "JAR file size: $(du -h "$artifact_path" | cut -f1)"
+        print_info "JAR file exists and size: $(du -h "$artifact_path" | cut -f1)"
+        
+        # Check if release exists
+        if [ "$DRY_RUN" = false ]; then
+            if gh release view "v$new_version" > /dev/null 2>&1; then
+                print_info "Release v$new_version exists, proceeding with upload..."
+            else
+                print_error "Release v$new_version does not exist! Cannot upload JAR."
+                print_info "Available releases:"
+                gh release list --limit 5
+                exit 1
+            fi
+        fi
         
         # Force upload with multiple attempts
         local upload_success=false
@@ -797,6 +868,10 @@ main() {
                 print_success "Direct upload succeeded!"
             else
                 print_error "Direct upload also failed. Please upload manually."
+                print_info "Debug info:"
+                print_info "  - JAR path: $artifact_path"
+                print_info "  - JAR exists: $([[ -f "$artifact_path" ]] && echo "YES" || echo "NO")"
+                print_info "  - Release exists: $(gh release view "v$new_version" > /dev/null 2>&1 && echo "YES" || echo "NO")"
             fi
         fi
     else
