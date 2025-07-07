@@ -661,18 +661,28 @@ main() {
     fi
     print_info "Project name: $project_name"
 
-    local current_version
+    # Sync VERSION file with pom.xml to prevent mismatches
+    local pom_version=$(get_current_version)
+    local file_version=""
     if [[ -f "$VERSION_FILE" ]]; then
-        current_version=$(cat "$VERSION_FILE")
-    else
-        current_version=$(get_current_version)
+        file_version=$(cat "$VERSION_FILE")
     fi
     
-    if [[ -z "$current_version" ]]; then
+    local current_version="$pom_version"
+    if [[ -n "$pom_version" && -n "$file_version" && "$pom_version" != "$file_version" ]]; then
+        print_warning "Version mismatch detected: POM ($pom_version) vs VERSION file ($file_version)"
+        print_info "Using POM version as authoritative source and updating VERSION file..."
+        execute "echo" "$pom_version" ">" "$VERSION_FILE"
+        current_version="$pom_version"
+    elif [[ -z "$current_version" && -n "$file_version" ]]; then
+        current_version="$file_version"
+    elif [[ -z "$current_version" ]]; then
         print_warning "No version found. Using default: $DEFAULT_STARTING_VERSION"
         current_version=$DEFAULT_STARTING_VERSION
+        execute "echo" "$current_version" ">" "$VERSION_FILE"
     fi
-    print_info "Current version: $current_version"
+    
+    print_info "Current version: $current_version (POM: ${pom_version:-"N/A"}, File: ${file_version:-"N/A"})"
 
     echo "Version options:"
     echo "1) patch ($(increment_version "$current_version" "patch"))"
@@ -731,27 +741,63 @@ main() {
 
     local artifact_path=$(build_project "$new_version" "$project_name")
     run_plugins "post-build"
-
-    if ! create_github_release_with_retry "v$new_version" "Release v$new_version" "$release_notes" "$artifact_path"; then
-        print_error "Failed to create GitHub release."
-        read -p "Rollback changes? (y/N): " rollback_choice
-        if [[ "$rollback_choice" =~ ^[Yy]$ ]]; then
-            rollback_git_changes "$new_version"
-        fi
-        exit 1
+    
+    # Ensure VERSION file matches the actual version used in build
+    local actual_version=$(get_current_version)
+    if [[ -n "$actual_version" && "$actual_version" != "$new_version" ]]; then
+        print_warning "POM version ($actual_version) differs from target version ($new_version). Syncing..."
+        new_version="$actual_version"
+        execute "echo" "$new_version" ">" "$VERSION_FILE"
     fi
 
-    # Always ensure the JAR is uploaded to the release
+    # Check if release already exists
+    if [ "$DRY_RUN" = false ] && gh release view "v$new_version" > /dev/null 2>&1; then
+        print_info "Release v$new_version already exists. Skipping creation and uploading JAR..."
+    else
+        if ! create_github_release_with_retry "v$new_version" "Release v$new_version" "$release_notes" "$artifact_path"; then
+            print_error "Failed to create GitHub release."
+            read -p "Rollback changes? (y/N): " rollback_choice
+            if [[ "$rollback_choice" =~ ^[Yy]$ ]]; then
+                rollback_git_changes "$new_version"
+            fi
+            exit 1
+        fi
+    fi
+
+    # ALWAYS ensure the JAR is uploaded to the release (regardless of whether release was created or existed)
+    print_info "=== JAR Upload Phase ==="
     if [[ -n "$artifact_path" && -f "$artifact_path" ]]; then
-        print_info "Ensuring JAR is uploaded to release..."
         print_info "JAR file path: $artifact_path"
         print_info "JAR file size: $(du -h "$artifact_path" | cut -f1)"
         
-        if ! upload_artifact_to_release "$new_version" "$artifact_path"; then
-            print_warning "Failed to upload JAR to release. You may need to upload it manually:"
-            print_info "gh release upload v$new_version '$artifact_path'"
-        else
-            print_success "JAR upload completed successfully!"
+        # Force upload with multiple attempts
+        local upload_success=false
+        for attempt in 1 2 3; do
+            print_info "JAR upload attempt $attempt of 3..."
+            if upload_artifact_to_release "$new_version" "$artifact_path"; then
+                print_success "JAR upload completed successfully on attempt $attempt!"
+                upload_success=true
+                break
+            else
+                print_warning "Upload attempt $attempt failed."
+                if [ $attempt -lt 3 ]; then
+                    print_info "Waiting 5 seconds before retry..."
+                    sleep 5
+                fi
+            fi
+        done
+        
+        if [ "$upload_success" = false ]; then
+            print_error "All JAR upload attempts failed!"
+            print_info "Manual upload command: gh release upload v$new_version '$artifact_path'"
+            
+            # Try one more time with direct gh command (bypassing our wrapper)
+            print_info "Attempting direct upload as fallback..."
+            if gh release upload "v$new_version" "$artifact_path" 2>/dev/null; then
+                print_success "Direct upload succeeded!"
+            else
+                print_error "Direct upload also failed. Please upload manually."
+            fi
         fi
     else
         print_error "JAR file not found at: $artifact_path"
