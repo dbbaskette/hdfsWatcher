@@ -406,6 +406,198 @@ public class FileUploadController {
     }
 
     /**
+     * Immediately processes specific files without waiting for the next scan cycle.
+     * 
+     * @param request JSON with file hashes to process immediately
+     * @return JSON response with processing results
+     */
+    @PostMapping("/api/process-now")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> processFilesNow(@RequestBody Map<String, Object> request) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<String> fileHashes = (List<String>) request.get("fileHashes");
+            
+            if (fileHashes == null || fileHashes.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "status", "error",
+                    "message", "No file hashes provided for processing"
+                ));
+            }
+            
+            int processedCount = 0;
+            List<String> processedHashes = new ArrayList<>();
+            List<String> failedHashes = new ArrayList<>();
+            
+            String mode = properties.getMode();
+            boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            
+            for (String hash : fileHashes) {
+                try {
+                    // Find the file details by hash
+                    String filename = findFilenameByHash(hash);
+                    if (filename == null) {
+                        logger.warn("Could not find filename for hash: {}", hash);
+                        failedHashes.add(hash);
+                        continue;
+                    }
+                    
+                    // Process the file immediately
+                    String fileUrl = processFileImmediately(filename, isLocalMode);
+                    
+                    // Send to output (RabbitMQ/stream) first, then mark as processed
+                    try {
+                        output.send(fileUrl, properties.getMode());
+                        
+                        // Only mark as processed after successful queue send
+                        processedFilesService.markFileAsProcessed(hash);
+                        processedCount++;
+                        processedHashes.add(hash);
+                        
+                        logger.info("Immediately processed file: {} -> {}", filename, fileUrl);
+                        
+                    } catch (Exception e) {
+                        logger.error("Failed to send file to queue: {} (hash: {}). Error: {}", 
+                            filename, hash, e.getMessage());
+                        failedHashes.add(hash);
+                        // Don't mark as processed if queue send failed
+                        continue;
+                    }
+                    
+                } catch (Exception e) {
+                    logger.error("Failed to process file with hash: {}", hash, e);
+                    failedHashes.add(hash);
+                }
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("processedCount", processedCount);
+            response.put("processedHashes", processedHashes);
+            response.put("failedHashes", failedHashes);
+            response.put("message", "Successfully processed " + processedCount + " files immediately");
+            response.put("timestamp", System.currentTimeMillis());
+            
+            logger.info("Immediately processed {} files", processedCount);
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("Error processing files immediately", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to process files immediately: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Finds filename by hash by looking up in the current file list.
+     */
+    private String findFilenameByHash(String hash) {
+        try {
+            if (properties.isPseudoop()) {
+                // For local mode, get files from local storage
+                List<String> files = storageService.loadAll()
+                    .map(path -> path.getFileName().toString())
+                    .collect(Collectors.toList());
+                
+                for (String filename : files) {
+                    try {
+                        java.nio.file.Path filePath = storageService.load(filename);
+                        long fileSize = java.nio.file.Files.size(filePath);
+                        long modificationTime = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+                        String fileHash = processedFilesService.generateFileHash(filename, fileSize, modificationTime);
+                        
+                        if (hash.equals(fileHash)) {
+                            return filename;
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Error checking file hash for: {}", filename, e);
+                    }
+                }
+            } else {
+                // For HDFS mode, get files from WebHDFS
+                List<Map<String, Object>> hdfsFiles = webHdfsService.listFilesWithDetails();
+                
+                for (Map<String, Object> hdfsFile : hdfsFiles) {
+                    String filename = (String) hdfsFile.get("filename");
+                    Long size = (Long) hdfsFile.get("size");
+                    Long modificationTime = (Long) hdfsFile.get("modificationTime");
+                    
+                    String fileHash = processedFilesService.generateFileHash(filename, size, modificationTime);
+                    
+                    if (hash.equals(fileHash)) {
+                        return filename;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error finding filename by hash: {}", hash, e);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Processes a file immediately and returns the public URL.
+     */
+    private String processFileImmediately(String filename, boolean isLocalMode) throws Exception {
+        if (isLocalMode) {
+            // For local mode, build the file URL
+            return UrlUtils.buildFileUrl(
+                properties.getPublicAppUri(), 
+                HdfsWatcherConstants.FILES_PATH, 
+                filename
+            );
+        } else {
+            // For HDFS mode, build the WebHDFS URL
+            String baseUrl = properties.getWebhdfsUri();
+            String hdfsPath = properties.getHdfsPath();
+            String user = properties.getHdfsUser();
+            
+            if (baseUrl == null || baseUrl.isEmpty()) {
+                // Fallback to hdfsUri logic
+                baseUrl = buildBaseUriFromHdfsUri();
+            }
+            
+            String encodedFilename = UrlUtils.encodePathSegment(filename);
+            String webhdfsUrl = baseUrl.replaceAll("/$", "") + 
+                               HdfsWatcherConstants.WEBHDFS_PATH + 
+                               hdfsPath.replaceAll("/$", "") + "/" + encodedFilename;
+            
+            return webhdfsUrl;
+        }
+    }
+    
+    /**
+     * Builds base URI from HDFS URI for backward compatibility.
+     */
+    private String buildBaseUriFromHdfsUri() {
+        String hdfsUri = properties.getHdfsUri();
+        String hostPort = "localhost:9000";
+        String scheme = HdfsWatcherConstants.HTTP_SCHEME.replace("://", "");
+        
+        if (hdfsUri != null && hdfsUri.startsWith(HdfsWatcherConstants.HDFS_SCHEME)) {
+            String remainder = hdfsUri.substring(HdfsWatcherConstants.HDFS_SCHEME.length());
+            int slashIdx = remainder.indexOf('/');
+            hostPort = (slashIdx >= 0) ? remainder.substring(0, slashIdx) : remainder;
+        } else if (hdfsUri != null && 
+                  (hdfsUri.startsWith(HdfsWatcherConstants.HTTP_SCHEME) || 
+                   hdfsUri.startsWith(HdfsWatcherConstants.HTTPS_SCHEME))) {
+            // If user already provides http(s) in hdfsUri
+            int schemeEnd = hdfsUri.indexOf("://");
+            scheme = hdfsUri.substring(0, schemeEnd);
+            String remainder = hdfsUri.substring(schemeEnd + 3);
+            int slashIdx = remainder.indexOf('/');
+            hostPort = (slashIdx >= 0) ? remainder.substring(0, slashIdx) : remainder;
+        }
+        
+        return scheme + "://" + hostPort;
+    }
+
+    /**
      * Clears all processed files tracking.
      * 
      * @return JSON response with clearing results

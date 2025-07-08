@@ -182,13 +182,22 @@ public class HdfsWatcherService {
                     continue;
                 }
                 
-                // Process the file
-                String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
-                output.send(webhdfsUrl, properties.getMode());
+                // Process the file - send to queue first, then mark as processed
+                try {
+                    String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
+                    output.send(webhdfsUrl, properties.getMode());
+                    
+                    // Only mark as processed after successful queue send
+                    processedFilesService.markFileAsProcessed(fileHash);
+                    processedCount++;
+                    logger.debug("Successfully processed file: {} (hash: {})", filename, fileHash);
+                } catch (Exception e) {
+                    logger.error("Failed to process file: {} (hash: {}). Error: {}", 
+                        filename, fileHash, e.getMessage());
+                    // Don't mark as processed if queue send failed
+                    continue;
+                }
                 
-                // Mark file as processed
-                processedFilesService.markFileAsProcessed(fileHash);
-                processedCount++;
                 batchSize++;
                 
                 // Add a small delay every 5 files to avoid log rate limits
@@ -204,11 +213,14 @@ public class HdfsWatcherService {
             }
             
             if (processedCount > 0 || skippedCount > 0) {
-                logger.error("HDFS Poll Results - Processed: {}, Skipped: {}, Total: {}", 
-                    processedCount, skippedCount, processedCount + skippedCount);
+                logger.info("HDFS polling completed: {} files processed, {} files skipped", 
+                    processedCount, skippedCount);
             }
+            
         } catch (IOException e) {
-            logger.error("Error polling HDFS directory '{}': {}", properties.getHdfsPath(), e.getMessage(), e);
+            logger.error("Error polling HDFS directory: {}", properties.getHdfsPath(), e);
+        } catch (Exception e) {
+            logger.error("Unexpected error during HDFS polling", e);
         }
     }
     
@@ -234,25 +246,35 @@ public class HdfsWatcherService {
                     continue;
                 }
                 
-                // Process the file
-                String fileUrl = UrlUtils.buildFileUrl(
-                    properties.getPublicAppUri(), 
-                    HdfsWatcherConstants.FILES_PATH, 
-                    fileName
-                );
-                output.send(fileUrl, properties.getMode());
-                
-                // Mark file as processed
-                processedFilesService.markFileAsProcessed(fileHash);
-                processedCount++;
+                // Process the file - send to queue first, then mark as processed
+                try {
+                    String fileUrl = UrlUtils.buildFileUrl(
+                        properties.getPublicAppUri(), 
+                        HdfsWatcherConstants.FILES_PATH, 
+                        fileName
+                    );
+                    output.send(fileUrl, properties.getMode());
+                    
+                    // Only mark as processed after successful queue send
+                    processedFilesService.markFileAsProcessed(fileHash);
+                    processedCount++;
+                    logger.debug("Successfully processed local file: {} (hash: {})", fileName, fileHash);
+                } catch (Exception e) {
+                    logger.error("Failed to process local file: {} (hash: {}). Error: {}", 
+                        fileName, fileHash, e.getMessage());
+                    // Don't mark as processed if queue send failed
+                    continue;
+                }
             }
             
             if (processedCount > 0 || skippedCount > 0) {
-                logger.error("Local Poll Results - Processed: {}, Skipped: {}, Total: {}", 
-                    processedCount, skippedCount, processedCount + skippedCount);
+                logger.info("Local polling completed: {} files processed, {} files skipped", 
+                    processedCount, skippedCount);
             }
         } catch (IOException e) {
-            logger.error("Error polling local directory '{}': {}", localWatchPath, e.getMessage(), e);
+            logger.error("Error polling local directory: {}", localWatchPath, e);
+        } catch (Exception e) {
+            logger.error("Unexpected error during local polling", e);
         }
     }
 
