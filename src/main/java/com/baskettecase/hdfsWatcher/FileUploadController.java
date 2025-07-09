@@ -583,6 +583,87 @@ public class FileUploadController {
     }
     
     /**
+     * Processes any pending files that haven't been sent to the queue yet.
+     * 
+     * @return the number of files that were processed
+     */
+    private int processPendingFiles() {
+        int processedCount = 0;
+        String mode = properties.getMode();
+        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+        
+        try {
+            if (isLocalMode) {
+                // For local mode, get files from local storage
+                List<String> files = storageService.loadAll()
+                    .map(path -> path.getFileName().toString())
+                    .collect(Collectors.toList());
+                
+                for (String filename : files) {
+                    try {
+                        java.nio.file.Path filePath = storageService.load(filename);
+                        long fileSize = java.nio.file.Files.size(filePath);
+                        long modificationTime = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+                        String fileHash = processedFilesService.generateFileHash(filename, fileSize, modificationTime);
+                        
+                        // Check if file has already been processed
+                        if (!processedFilesService.isFileProcessed(fileHash)) {
+                            // Process the file immediately
+                            String fileUrl = UrlUtils.buildFileUrl(
+                                properties.getPublicAppUri(), 
+                                HdfsWatcherConstants.FILES_PATH, 
+                                filename
+                            );
+                            output.send(fileUrl, properties.getMode());
+                            
+                            // Mark as processed
+                            processedFilesService.markFileAsProcessed(fileHash);
+                            processedCount++;
+                            logger.info("Immediately processed local file: {} -> {}", filename, fileUrl);
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Error processing local file: {}", filename, e);
+                    }
+                }
+            } else {
+                // For HDFS mode, get files from WebHDFS
+                List<Map<String, Object>> hdfsFiles = webHdfsService.listFilesWithDetails();
+                
+                for (Map<String, Object> hdfsFile : hdfsFiles) {
+                    String filename = (String) hdfsFile.get("filename");
+                    Long size = (Long) hdfsFile.get("size");
+                    Long modificationTime = (Long) hdfsFile.get("modificationTime");
+                    
+                    String fileHash = processedFilesService.generateFileHash(filename, size, modificationTime);
+                    
+                    // Check if file has already been processed
+                    if (!processedFilesService.isFileProcessed(fileHash)) {
+                        try {
+                            // Process the file immediately
+                            String fileUrl = processFileImmediately(filename, false);
+                            output.send(fileUrl, properties.getMode());
+                            
+                            // Mark as processed
+                            processedFilesService.markFileAsProcessed(fileHash);
+                            processedCount++;
+                            logger.info("Immediately processed HDFS file: {} -> {}", filename, fileUrl);
+                        } catch (Exception e) {
+                            logger.warn("Error processing HDFS file: {}", filename, e);
+                        }
+                    }
+                }
+            }
+            
+            logger.info("Immediately processed {} pending files", processedCount);
+            return processedCount;
+            
+        } catch (Exception e) {
+            logger.error("Error processing pending files", e);
+            return processedCount; // Return what we processed so far
+        }
+    }
+    
+    /**
      * Builds base URI from HDFS URI for backward compatibility.
      */
     private String buildBaseUriFromHdfsUri() {
@@ -692,9 +773,9 @@ public class FileUploadController {
     }
     
     /**
-     * Enables file processing.
+     * Enables file processing and immediately processes any pending files.
      * 
-     * @return JSON response with the new processing state
+     * @return JSON response with the new processing state and processing results
      */
     @PostMapping("/api/processing/start")
     @ResponseBody
@@ -702,14 +783,18 @@ public class FileUploadController {
         try {
             processingStateService.enableProcessing();
             
+            // Immediately process any pending files
+            int processedCount = processPendingFiles();
+            
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
             response.put("processingEnabled", true);
             response.put("processingState", "enabled");
-            response.put("message", "File processing has been ENABLED");
+            response.put("immediatelyProcessedCount", processedCount);
+            response.put("message", "File processing has been ENABLED and " + processedCount + " pending files were processed immediately");
             response.put("timestamp", System.currentTimeMillis());
             
-            logger.info("File processing ENABLED via API");
+            logger.info("File processing ENABLED via API and {} files processed immediately", processedCount);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error enabling processing", e);
@@ -768,10 +853,19 @@ public class FileUploadController {
             response.put("status", "success");
             response.put("processingEnabled", newState);
             response.put("processingState", newState ? "enabled" : "disabled");
-            response.put("message", "File processing has been " + (newState ? "ENABLED" : "DISABLED"));
-            response.put("timestamp", System.currentTimeMillis());
             
-            logger.info("File processing {} via API", newState ? "ENABLED" : "DISABLED");
+            // If enabling processing, immediately process pending files
+            if (newState) {
+                int processedCount = processPendingFiles();
+                response.put("immediatelyProcessedCount", processedCount);
+                response.put("message", "File processing has been ENABLED and " + processedCount + " pending files were processed immediately");
+                logger.info("File processing ENABLED via toggle and {} files processed immediately", processedCount);
+            } else {
+                response.put("message", "File processing has been DISABLED");
+                logger.info("File processing DISABLED via toggle");
+            }
+            
+            response.put("timestamp", System.currentTimeMillis());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error toggling processing", e);

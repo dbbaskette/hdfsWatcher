@@ -747,7 +747,15 @@
                 .then(data => {
                     if (data.status === 'success') {
                         updateProcessingState(true);
-                        alert('Processing has been ENABLED!');
+                        const processedCount = data.immediatelyProcessedCount || 0;
+                        if (processedCount > 0) {
+                            alert(`Processing has been ENABLED!\n\n${processedCount} pending files were processed immediately.`);
+                        } else {
+                            alert('Processing has been ENABLED!\n\nNo pending files to process.');
+                        }
+                        // Refresh the file list to show updated status
+                        loadFiles();
+                        loadStatus();
                     } else {
                         alert('Failed to enable processing: ' + data.message);
                     }
@@ -807,7 +815,17 @@
                 .then(data => {
                     if (data.status === 'success') {
                         updateProcessingState(data.processingEnabled);
-                        alert('Processing has been ' + (data.processingEnabled ? 'ENABLED' : 'DISABLED') + '!');
+                        const processedCount = data.immediatelyProcessedCount || 0;
+                        if (data.processingEnabled && processedCount > 0) {
+                            alert(`Processing has been ENABLED!\n\n${processedCount} pending files were processed immediately.`);
+                            // Refresh the file list to show updated status
+                            loadFiles();
+                            loadStatus();
+                        } else if (data.processingEnabled) {
+                            alert('Processing has been ENABLED!\n\nNo pending files to process.');
+                        } else {
+                            alert('Processing has been DISABLED!');
+                        }
                     } else {
                         alert('Failed to toggle processing: ' + data.message);
                     }
