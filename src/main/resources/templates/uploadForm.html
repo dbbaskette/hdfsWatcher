@@ -111,7 +111,7 @@
         </header>
 
         <!-- Status Dashboard -->
-        <div class="max-w-6xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="max-w-6xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-5 gap-4">
             <!-- Total Files -->
             <div class="dashboard-card rounded-lg shadow p-6 flex items-center">
                 <div class="p-2 bg-blue-200 rounded-lg">
@@ -146,6 +146,18 @@
                 <div class="ml-4">
                     <p class="text-sm font-medium text-gray-700">Pending</p>
                     <p class="text-2xl font-bold text-gray-900" id="unprocessedFiles">-</p>
+                </div>
+            </div>
+            <!-- Processing State -->
+            <div class="dashboard-card rounded-lg shadow p-6 flex items-center">
+                <div class="p-2 bg-purple-200 rounded-lg">
+                    <svg class="w-6 h-6 text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-700">Processing</p>
+                    <p class="text-2xl font-bold text-gray-900" id="processingState">-</p>
                 </div>
             </div>
             <!-- Last Updated -->
@@ -188,6 +200,50 @@
                     </div>
                 </div>
                 </div>
+
+            <!-- Processing Controls Section -->
+            <div class="bg-white rounded-xl shadow-md overflow-hidden mb-8">
+                <div class="p-6">
+                    <h2 class="text-xl font-semibold text-purple-800 mb-4 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Processing Controls
+                    </h2>
+                    <div class="flex flex-col sm:flex-row gap-4 items-center">
+                        <div class="flex items-center space-x-4">
+                            <span class="text-sm font-medium text-gray-700">Processing Status:</span>
+                            <span id="processingStatusText" class="px-3 py-1 rounded-full text-sm font-medium">Loading...</span>
+                        </div>
+                        <div class="flex space-x-3">
+                            <button id="startProcessingBtn" class="px-6 py-2 text-sm font-medium text-white bg-green-500 border border-green-600 rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                                <svg class="w-4 h-4 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Start Processing
+                            </button>
+                            <button id="stopProcessingBtn" class="px-6 py-2 text-sm font-medium text-white bg-red-500 border border-red-600 rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                                <svg class="w-4 h-4 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Stop Processing
+                            </button>
+                            <button id="toggleProcessingBtn" class="px-6 py-2 text-sm font-medium text-white bg-blue-500 border border-blue-600 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 flex items-center">
+                                <svg class="w-4 h-4 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582M20 20v-5h-.581M5 9a7 7 0 0114 0v6a7 7 0 01-14 0V9zm7 7v.01" />
+                                </svg>
+                                Toggle Processing
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-4 bg-gray-50 rounded-lg">
+                        <p class="text-sm text-gray-600">
+                            <strong>Note:</strong> When processing is disabled, files will still be uploaded and tracked, but they will not be sent to the queue until processing is enabled. 
+                            This helps control the timing of your demo by preventing automatic file processing.
+                        </p>
+                    </div>
+                </div>
+            </div>
 
             <!-- File Management Section -->
             <div class="bg-white rounded-xl shadow-md overflow-hidden">
@@ -255,12 +311,19 @@
             const reprocessBtn = document.getElementById('reprocessBtn');
             const clearAllBtn = document.getElementById('clearAllBtn');
             
+            // Processing controls
+            const startProcessingBtn = document.getElementById('startProcessingBtn');
+            const stopProcessingBtn = document.getElementById('stopProcessingBtn');
+            const toggleProcessingBtn = document.getElementById('toggleProcessingBtn');
+            const processingStatusText = document.getElementById('processingStatusText');
+            
             let files = [];
             let selectedFiles = new Set();
             
             // Initialize
             loadFiles();
             loadStatus();
+            loadProcessingState();
             
             // Handle click on drop zone
             dropZone.addEventListener('click', () => fileInput.click());
@@ -611,6 +674,11 @@
                 document.getElementById('processedFiles').textContent = processed;
                 document.getElementById('unprocessedFiles').textContent = unprocessed;
                 document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+                
+                // Update processing state if available
+                if (data.processingEnabled !== undefined) {
+                    updateProcessingState(data.processingEnabled);
+                }
             }
             
             // Show error
@@ -634,10 +702,131 @@
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
             }
             
+            // Load processing state
+            function loadProcessingState() {
+                fetch('/api/processing-state')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            updateProcessingState(data.processingEnabled);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading processing state:', error);
+                    });
+            }
+            
+            // Update processing state UI
+            function updateProcessingState(isEnabled) {
+                const statusText = isEnabled ? 'ENABLED' : 'DISABLED';
+                const statusClass = isEnabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                
+                processingStatusText.textContent = statusText;
+                processingStatusText.className = `px-3 py-1 rounded-full text-sm font-medium ${statusClass}`;
+                
+                // Update dashboard
+                document.getElementById('processingState').textContent = statusText;
+                
+                // Update button states
+                startProcessingBtn.disabled = isEnabled;
+                stopProcessingBtn.disabled = !isEnabled;
+            }
+            
+            // Start processing
+            startProcessingBtn.addEventListener('click', function() {
+                this.disabled = true;
+                this.innerHTML = '<svg class="w-4 h-4 mr-1 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582M20 20v-5h-.581M5 9a7 7 0 0114 0v6a7 7 0 01-14 0V9zm7 7v.01" /></svg>Starting...';
+                
+                fetch('/api/processing/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateProcessingState(true);
+                        alert('Processing has been ENABLED!');
+                    } else {
+                        alert('Failed to enable processing: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error starting processing:', error);
+                    alert('Failed to start processing. Please try again.');
+                })
+                .finally(() => {
+                    this.disabled = false;
+                    this.innerHTML = '<svg class="w-4 h-4 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>Start Processing';
+                });
+            });
+            
+            // Stop processing
+            stopProcessingBtn.addEventListener('click', function() {
+                this.disabled = true;
+                this.innerHTML = '<svg class="w-4 h-4 mr-1 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582M20 20v-5h-.581M5 9a7 7 0 0114 0v6a7 7 0 01-14 0V9zm7 7v.01" /></svg>Stopping...';
+                
+                fetch('/api/processing/stop', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateProcessingState(false);
+                        alert('Processing has been DISABLED!');
+                    } else {
+                        alert('Failed to disable processing: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error stopping processing:', error);
+                    alert('Failed to stop processing. Please try again.');
+                })
+                .finally(() => {
+                    this.disabled = false;
+                    this.innerHTML = '<svg class="w-4 h-4 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>Stop Processing';
+                });
+            });
+            
+            // Toggle processing
+            toggleProcessingBtn.addEventListener('click', function() {
+                this.disabled = true;
+                this.innerHTML = '<svg class="w-4 h-4 mr-1 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582M20 20v-5h-.581M5 9a7 7 0 0114 0v6a7 7 0 01-14 0V9zm7 7v.01" /></svg>Toggling...';
+                
+                fetch('/api/processing/toggle', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateProcessingState(data.processingEnabled);
+                        alert('Processing has been ' + (data.processingEnabled ? 'ENABLED' : 'DISABLED') + '!');
+                    } else {
+                        alert('Failed to toggle processing: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error toggling processing:', error);
+                    alert('Failed to toggle processing. Please try again.');
+                })
+                .finally(() => {
+                    this.disabled = false;
+                    this.innerHTML = '<svg class="w-4 h-4 mr-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582M20 20v-5h-.581M5 9a7 7 0 0114 0v6a7 7 0 01-14 0V9zm7 7v.01" /></svg>Toggle Processing';
+                });
+            });
+            
             // Auto-refresh every 30 seconds
             setInterval(() => {
                 loadFiles();
                 loadStatus();
+                loadProcessingState();
             }, 30000);
         });
     </script>

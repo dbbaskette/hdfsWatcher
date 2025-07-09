@@ -1,6 +1,7 @@
 package com.baskettecase.hdfsWatcher;
 
 import com.baskettecase.hdfsWatcher.service.ProcessedFilesService;
+import com.baskettecase.hdfsWatcher.service.ProcessingStateService;
 import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
 import com.baskettecase.hdfsWatcher.util.UrlUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -35,13 +36,15 @@ public class HdfsWatcherService {
     private final FileSystem fileSystem;
     private final HdfsWatcherOutput output;
     private final ProcessedFilesService processedFilesService;
+    private final ProcessingStateService processingStateService;
     private final boolean pseudoop;
     private final java.nio.file.Path localWatchPath;
 
-    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output, ProcessedFilesService processedFilesService) throws Exception {
+    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output, ProcessedFilesService processedFilesService, ProcessingStateService processingStateService) throws Exception {
         this.properties = validateProperties(properties);
         this.output = validateOutput(output);
         this.processedFilesService = processedFilesService;
+        this.processingStateService = processingStateService;
         this.pseudoop = properties.isPseudoop();
         logger.info("Initializing HdfsWatcherService in {} mode", pseudoop ? "pseudoop" : "HDFS");
         if (this.pseudoop) {
@@ -182,6 +185,13 @@ public class HdfsWatcherService {
                     continue;
                 }
                 
+                // Check if processing is enabled before sending to queue
+                if (!processingStateService.isProcessingEnabled()) {
+                    logger.debug("Processing is disabled, skipping file: {} (hash: {})", filename, fileHash);
+                    skippedCount++;
+                    continue;
+                }
+                
                 // Process the file - send to queue first, then mark as processed
                 try {
                     String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
@@ -242,6 +252,13 @@ public class HdfsWatcherService {
                 
                 // Check if file has already been processed
                 if (processedFilesService.isFileProcessed(fileHash)) {
+                    skippedCount++;
+                    continue;
+                }
+                
+                // Check if processing is enabled before sending to queue
+                if (!processingStateService.isProcessingEnabled()) {
+                    logger.debug("Processing is disabled, skipping local file: {} (hash: {})", fileName, fileHash);
                     skippedCount++;
                     continue;
                 }

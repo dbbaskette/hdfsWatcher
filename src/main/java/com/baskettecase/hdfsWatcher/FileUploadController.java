@@ -1,6 +1,7 @@
 package com.baskettecase.hdfsWatcher;
 
 import com.baskettecase.hdfsWatcher.service.ProcessedFilesService;
+import com.baskettecase.hdfsWatcher.service.ProcessingStateService;
 import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
 import com.baskettecase.hdfsWatcher.util.UrlUtils;
 import org.slf4j.Logger;
@@ -30,19 +31,22 @@ public class FileUploadController {
     private final HdfsWatcherOutput output;
     private final HdfsWatcherService hdfsWatcherService;
     private final ProcessedFilesService processedFilesService;
+    private final ProcessingStateService processingStateService;
 
     public FileUploadController(LocalFileService storageService, 
                               HdfsWatcherProperties properties,
                               WebHdfsService webHdfsService,
                               HdfsWatcherOutput output,
                               HdfsWatcherService hdfsWatcherService,
-                              ProcessedFilesService processedFilesService) {
+                              ProcessedFilesService processedFilesService,
+                              ProcessingStateService processingStateService) {
         this.storageService = validateService(storageService, "LocalFileService");
         this.properties = validateService(properties, "HdfsWatcherProperties");
         this.webHdfsService = validateService(webHdfsService, "WebHdfsService");
         this.output = validateService(output, "HdfsWatcherOutput");
         this.hdfsWatcherService = validateService(hdfsWatcherService, "HdfsWatcherService");
         this.processedFilesService = validateService(processedFilesService, "ProcessedFilesService");
+        this.processingStateService = validateService(processingStateService, "ProcessingStateService");
         
         String mode = properties.getMode();
         boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
@@ -254,6 +258,9 @@ public class FileUploadController {
             int processedCount = processedFilesService.getProcessedFilesCount();
             Set<String> processedHashes = processedFilesService.getAllProcessedFiles();
             
+            // Get processing state
+            boolean isProcessingEnabled = processingStateService.isProcessingEnabled();
+            
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
             response.put("mode", mode);
@@ -262,6 +269,8 @@ public class FileUploadController {
             response.put("totalFiles", files.size());
             response.put("processedFilesCount", processedCount);
             response.put("processedFilesHashes", processedHashes);
+            response.put("processingEnabled", isProcessingEnabled);
+            response.put("processingState", processingStateService.getProcessingState());
             response.put("timestamp", System.currentTimeMillis());
             
             return ResponseEntity.ok(response);
@@ -339,6 +348,8 @@ public class FileUploadController {
             response.put("totalFiles", fileDetails.size());
             response.put("hdfsDisconnected", hdfsDisconnected);
             response.put("mode", mode);
+            response.put("processingEnabled", processingStateService.isProcessingEnabled());
+            response.put("processingState", processingStateService.getProcessingState());
             response.put("timestamp", System.currentTimeMillis());
             
             return ResponseEntity.ok(response);
@@ -649,6 +660,125 @@ public class FileUploadController {
                 "processedFilesCount", 0,
                 "status", "error",
                 "message", e.getMessage()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Gets the current processing state.
+     * 
+     * @return JSON response with processing state
+     */
+    @GetMapping("/api/processing-state")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> getProcessingState() {
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("processingEnabled", processingStateService.isProcessingEnabled());
+            response.put("processingState", processingStateService.getProcessingState());
+            response.put("timestamp", System.currentTimeMillis());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error getting processing state", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Enables file processing.
+     * 
+     * @return JSON response with the new processing state
+     */
+    @PostMapping("/api/processing/start")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> startProcessing() {
+        try {
+            processingStateService.enableProcessing();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("processingEnabled", true);
+            response.put("processingState", "enabled");
+            response.put("message", "File processing has been ENABLED");
+            response.put("timestamp", System.currentTimeMillis());
+            
+            logger.info("File processing ENABLED via API");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error enabling processing", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to enable processing: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Disables file processing.
+     * 
+     * @return JSON response with the new processing state
+     */
+    @PostMapping("/api/processing/stop")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> stopProcessing() {
+        try {
+            processingStateService.disableProcessing();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("processingEnabled", false);
+            response.put("processingState", "disabled");
+            response.put("message", "File processing has been DISABLED");
+            response.put("timestamp", System.currentTimeMillis());
+            
+            logger.info("File processing DISABLED via API");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error disabling processing", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to disable processing: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+    
+    /**
+     * Toggles the processing state.
+     * 
+     * @return JSON response with the new processing state
+     */
+    @PostMapping("/api/processing/toggle")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> toggleProcessing() {
+        try {
+            boolean newState = processingStateService.toggleProcessing();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("processingEnabled", newState);
+            response.put("processingState", newState ? "enabled" : "disabled");
+            response.put("message", "File processing has been " + (newState ? "ENABLED" : "DISABLED"));
+            response.put("timestamp", System.currentTimeMillis());
+            
+            logger.info("File processing {} via API", newState ? "ENABLED" : "DISABLED");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error toggling processing", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to toggle processing: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
             );
             return ResponseEntity.status(500).body(response);
         }
