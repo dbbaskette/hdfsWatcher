@@ -1,109 +1,277 @@
+# HDFS Watcher
+
 <div align="center">
   <img src="images/hdfswatcher.png" alt="HDFS Watcher Logo" width="300">
-  <h1>HDFS Watcher</h1>
-  <p>A Spring Boot application that monitors an HDFS directory and outputs new file URLs as JSON messages.</p>
+  <h1>HDFS Watcher v3.10.0</h1>
+  <p>⚡ API-only Spring Boot service that monitors HDFS and emits file URLs for your RAG/data pipelines.</p>
+
+  <a href="https://www.java.com/"><img alt="Java" src="https://img.shields.io/badge/Java-21-007396?logo=java&logoColor=white"></a>
+  <a href="https://spring.io/projects/spring-boot"><img alt="Spring Boot" src="https://img.shields.io/badge/Spring%20Boot-3.4.5-6DB33F?logo=spring-boot&logoColor=white"></a>
+  <a href="https://maven.apache.org/"><img alt="Build" src="https://img.shields.io/badge/Build-Maven-C71A36?logo=apachemaven&logoColor=white"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
 </div>
 
-## Features
+## 🚀 Features
 
-- Monitors HDFS directory for new files
-- Outputs WebHDFS URLs as JSON
-- Supports two modes:
-  - **standalone**: Logs to console
-  - **cloud**: Streams to RabbitMQ
-- Lightweight with minimal dependencies
+### Core Functionality
+- **HDFS Directory Monitoring**: Monitors HDFS directories for new files
+- **WebHDFS URL Generation**: Outputs WebHDFS URLs as JSON messages
+- **Multiple Deployment Modes**: 
+  - **Standalone**: Logs to console with local file storage
+  - **Cloud**: Streams to RabbitMQ/Spring Cloud Data Flow
 - **Pseudo-operational Mode**: Local file system support when HDFS is unavailable
 
-## Prerequisites
+### API-Only Interface
+- **Processing Controls**: Start/Stop/Toggle processing with immediate execution
+- **File Upload API**: Upload via multipart endpoint (up to 512MB)
+- **File Listing**: Unified metadata across modes (name, size, type, state, url)
+- **Reprocess-All**: Stop + clear processed flags in one call
 
-- Java 11+
-- Maven
-- Access to HDFS cluster
-- (For cloud mode) RabbitMQ
+### Processing Control
+- **Start/Stop Controls**: Enable/disable file processing with immediate execution
+- **Pending File Processing**: When enabled, immediately processes all pending files
+- **Demo Timing Control**: Perfect for controlling demo flow and timing
+- **Queue Management**: Control when files are sent to RabbitMQ/SCDF
 
-## Quick Start
+## 📋 Prerequisites
 
-1. **Build**
-   ```sh
-   ./mvnw clean package -DskipTests spring-boot:repackage
-   ```
+- **Java 21+** (Spring Boot 3.4.5)
+- **Maven 3.6+**
+- **HDFS Cluster** (for HDFS mode)
+- **RabbitMQ** (for cloud mode with Spring Cloud Data Flow)
 
-2. **Run in Standalone Mode**
-   ```sh
-   java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=standalone
-   ```
+## 🏃‍♂️ Quick Start
 
-3. **Run in Cloud Mode**
-   ```sh
-   java -jar target/hdfsWatcher-0.1.0-SNAPSHOT.jar --spring.profiles.active=cloud
-   ```
+### 1. Build the Application
+```bash
+./mvnw clean package -DskipTests spring-boot:repackage
+```
 
-## Configuration
+### 2. Run in Standalone Mode (Recommended for Testing)
+```bash
+# Using the provided script
+./run-pseudoop.sh
 
-Edit the appropriate properties file:
-- `src/main/resources/application-standalone.properties`
-- `src/main/resources/application-cloud.properties`
-- `src/main/resources/application.properties` (for common settings)
+# Or manually
+java -jar target/hdfsWatcher-3.10.0.jar \
+  --hdfswatcher.pseudoop=true \
+  --hdfswatcher.local-storage-path=/tmp/hdfsWatcher \
+  --server.port=8080
+```
 
-### Key Properties
+### 3. Run in Cloud Mode
+```bash
+java -jar target/hdfsWatcher-3.10.0.jar \
+  --spring.profiles.active=cloud \
+  --hdfswatcher.mode=cloud
+```
 
-#### HDFS Mode (default)
-- `hdfswatcher.hdfsUri`: HDFS NameNode URI (e.g., `hdfs://localhost:9000`)
-- `hdfswatcher.hdfsPath`: Directory to watch (default: `/`)
-- `hdfswatcher.pollInterval`: Polling interval in seconds (default: `60`)
-- `hdfswatcher.hdfsUser`: HDFS user (default: current system user)
-- `hdfswatcher.webhdfs-uri`: WebHDFS URI (optional, e.g., `http://localhost:50070`)
+### 4. Use the API (no UI)
+The app no longer serves a browser UI. Use curl or your management service.
 
-#### Pseudo-operational Mode
-To enable local file system mode instead of HDFS:
-- `hdfswatcher.pseudoop`: Set to `true` to enable pseudoop mode
-- `hdfswatcher.local-storage-path`: Local directory for file storage (default: `/tmp/hdfsWatcher`)
+## 🔧 API Endpoints
 
-#### Server Configuration
-- `server.port`: Web interface port (default: `8080`)
-- `spring.servlet.multipart.max-file-size`: Maximum file upload size (default: `512MB`)
-- `spring.servlet.multipart.max-request-size`: Maximum request size (default: `512MB`)
+### Processing Control
+- `GET /api/processing-state` — Get current processing state
+- `POST /api/processing/start` — Enable processing and process all pending files now
+- `POST /api/processing/stop` — Disable processing
+- `POST /api/processing/toggle` — Toggle processing state
 
-## Pseudo-operational Mode
+### File Management
+- `GET /api/files` — List files with metadata
+- `POST /api/files/upload` — Upload file (multipart field: `file`)
+- `POST /api/reprocess-all` — Stop processing and clear all processed flags
+- `POST /api/reprocess` — Mark selected files (by hash) for reprocessing
+- `POST /api/clear` — Clear all processed flags (legacy; prefer `/api/reprocess-all`)
+- `GET /api/status` — Detailed status
 
-Pseudo-operational (pseudoop) mode allows you to use a local file system instead of HDFS for development and testing purposes.
-
-### Features
-
-- Web-based file upload interface
-- Local file storage with configurable directory
-- Same JSON output format as HDFS mode
-- Automatic file scanning and event generation
-- Support for files up to 512MB
-
-### Running in Pseudoop Mode
-
-1. **Using the provided script**:
-   ```bash
-   ./run-pseudoop.sh
-   ```
-
-2. **Or manually**:
-   ```bash
-   java -jar target/hdfsWatcher.jar \
-     --hdfswatcher.pseudoop=true \
-     --hdfswatcher.local-storage-path=/path/to/storage \
-     --server.port=8080
-   ```
-
-3. **Access the web interface** at `http://localhost:8080`
-
-4. **Upload files** using the web interface or by sending a POST request to `http://localhost:8080/` with a multipart file named "file".
-
-## Output Format
-
+Response for `GET /api/files`:
 ```json
 {
-  "type": "hdfs",
-  "url": "webhdfs://localhost:30800/test/yourfile"
+  "status": "success",
+  "files": [
+    { "name": "file1.txt", "size": 12345, "type": "file", "state": "processed", "url": "..." },
+    { "name": "file2.txt", "size": 6789,  "type": "file", "state": "pending",   "url": "..." }
+  ],
+  "totalFiles": 2,
+  "processingEnabled": true,
+  "processingState": "enabled",
+  "timestamp": 1730745600000
 }
 ```
 
-## License
+Notes
+- The `url` field is the downstream processing URL.
+  - In HDFS mode, it is a WebHDFS URL.
+  - In pseudoop mode, it is an app-constructed URL for downstream consumers; this app does not serve file downloads.
 
-MIT
+## ⚙️ Configuration
+
+### Application Properties
+
+#### Server Configuration
+```properties
+server.port=${PORT:8080}
+server.servlet.context-path=/
+spring.servlet.multipart.max-file-size=512MB
+spring.servlet.multipart.max-request-size=512MB
+```
+
+#### HDFS Mode (Default)
+```properties
+hdfswatcher.hdfs-uri=hdfs://localhost:9000
+hdfswatcher.hdfs-path=/
+hdfswatcher.hdfs-user=${USER}
+hdfswatcher.poll-interval=60
+hdfswatcher.webhdfs-uri=http://localhost:50070
+hdfswatcher.mode=standalone
+```
+
+#### Pseudo-operational Mode
+```properties
+hdfswatcher.pseudoop=true
+hdfswatcher.local-storage-path=/tmp/hdfsWatcher
+```
+
+#### Cloud Mode
+```properties
+hdfswatcher.mode=cloud
+spring.cloud.stream.bindings.output.destination=your-queue-name
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HDFSWATCHER_PSEUDOOP` | Enable pseudoop mode | `false` |
+| `HDFSWATCHER_LOCAL_STORAGE_PATH` | Local storage directory | `/tmp` |
+| `HDFSWATCHER_HDFS_URI` | HDFS NameNode URI | `hdfs://localhost:9000` |
+| `HDFSWATCHER_HDFS_PATH` | Directory to watch | `/` |
+| `HDFSWATCHER_POLL_INTERVAL` | Polling interval (seconds) | `60` |
+| `PORT` | Server port | `8080` |
+
+## 🧪 API Examples
+
+```bash
+# Check processing state
+curl -s http://localhost:8080/api/processing-state | jq
+
+# Start processing (also processes pending files immediately)
+curl -s -X POST http://localhost:8080/api/processing/start | jq
+
+# Upload a file (pseudoop or HDFS mode)
+curl -s -F "file=@test.txt" http://localhost:8080/api/files/upload | jq
+
+# List files with normalized metadata
+curl -s http://localhost:8080/api/files | jq
+
+# Reprocess all (stop + clear processed flags)
+curl -s -X POST http://localhost:8080/api/reprocess-all | jq
+
+# Mark specific files for reprocessing (hashes from GET /api/files in HDFS mode)
+curl -s -X POST http://localhost:8080/api/reprocess \
+  -H 'Content-Type: application/json' \
+  -d '{"fileHashes":["<hash1>","<hash2>"]}' | jq
+```
+
+## 📊 Output Format
+
+### JSON Message (RabbitMQ/SCDF)
+```json
+{
+  "type": "hdfs",
+  "url": "webhdfs://localhost:30800/test/yourfile",
+  "mode": "cloud"
+}
+```
+
+### WebHDFS URL Format
+```
+http://namenode:50070/webhdfs/v1/path/to/file?op=OPEN&user.name=username
+```
+
+## 📈 Health & Metrics
+
+Actuator is enabled and exposes health, info, and metrics.
+
+- Health: `GET /actuator/health`
+  - Includes `webHdfsService` and `hdfsWatcherOutput` details
+- Metrics:
+  - `GET /actuator/metrics/hdfswatcher.processing.enabled`
+  - `GET /actuator/metrics/hdfswatcher.last.poll.timestamp`
+
+Tip: Use Prometheus or your monitoring stack to scrape these metrics.
+
+## 🏗️ Architecture
+
+### Core Components
+- **HdfsWatcherService**: Scheduled polling and file processing
+- **ProcessingStateService**: Start/stop control management
+- **ProcessedFilesService**: File tracking and deduplication
+- **FileUploadController**: API endpoints only (no web UI)
+- **WebHdfsService**: HDFS operations via WebHDFS
+- **LocalFileService**: Local file storage operations
+
+### Processing Flow
+1. **File Detection**: Scheduled polling detects new files
+2. **Processing Check**: Verifies if processing is enabled
+3. **Queue Send**: Sends file URL to RabbitMQ/SCDF
+4. **Status Update**: Marks file as processed
+5. **External UI**: Managed separately (this app is headless/API-only)
+
+## 🚀 Deployment
+
+### Local Development
+```bash
+./run-pseudoop.sh
+```
+
+### Cloud Foundry
+```bash
+cf push hdfsWatcher --random-route
+```
+
+### Docker
+```bash
+docker build -t hdfsWatcher .
+docker run -p 8080:8080 hdfsWatcher
+```
+
+## 🧪 Testing
+
+### Manual Testing
+1. Start application in pseudoop mode
+2. Upload files via web interface
+3. Toggle processing controls
+4. Verify file processing and queue output
+
+### API Testing
+See examples above.
+
+## 🔍 Troubleshooting
+
+### Common Issues
+- **HDFS Connection**: Use pseudoop mode for local testing
+- **File Processing**: Check processing state via web interface
+- **Queue Issues**: Verify RabbitMQ connection in cloud mode
+- **Large Files**: Ensure sufficient memory for 512MB uploads
+
+### Logs
+- Application logs show processing status and file operations
+- API endpoints return detailed error messages
+
+## 📝 License
+
+MIT License - see LICENSE file for details.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+---
+
+**HDFS Watcher v3.10.0** — Headless, API-only HDFS monitoring service for modern data and RAG pipelines. ✨

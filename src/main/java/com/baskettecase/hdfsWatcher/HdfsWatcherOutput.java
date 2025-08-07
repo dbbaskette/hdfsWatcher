@@ -5,12 +5,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
 
 /**
  * Service for handling output operations with proper logging and validation.
  */
 @Component
-public class HdfsWatcherOutput {
+public class HdfsWatcherOutput implements HealthIndicator {
     
     private static final Logger logger = LoggerFactory.getLogger(HdfsWatcherOutput.class);
     
@@ -94,5 +96,14 @@ public class HdfsWatcherOutput {
      */
     private void sendToConsole(String json) {
         logger.info(json);
+    }
+
+    @Override
+    public Health health() {
+        // If streamBridge is present we assume binder configured; otherwise still OK in standalone
+        if (streamBridge != null) {
+            return Health.up().withDetail("rabbit", "streamBridge-present").build();
+        }
+        return Health.up().withDetail("rabbit", "not-in-use").build();
     }
 }

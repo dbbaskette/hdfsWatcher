@@ -6,11 +6,10 @@ import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
 import com.baskettecase.hdfsWatcher.util.UrlUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
+// removed unused imports
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+// removed unused imports
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -64,77 +63,9 @@ public class FileUploadController {
         return service;
     }
 
-    /**
-     * Lists uploaded files with proper error handling and logging.
-     * 
-     * @param model the Spring model for template rendering
-     * @return the template name
-     */
-    @GetMapping("/")
-    public String listUploadedFiles(Model model) {
-        String mode = properties.getMode(); // "standalone", "cloud", etc.
-        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
-        
-        logger.debug("Listing uploaded files in {} mode", isLocalMode ? "local" : "HDFS");
-        
-        List<String> files;
-        boolean hdfsDisconnected = false;
-        
-        try {
-            if (isLocalMode) {
-                // Only use local storage in standalone mode with pseudoop=true
-                files = storageService.loadAll()
-                    .map(path -> path.getFileName().toString())
-                    .collect(Collectors.toList());
-                logger.debug("Retrieved {} files from local storage", files.size());
-            } else {
-                // Use WebHDFS for HDFS mode (cloud and standalone with pseudoop=false)
-                files = webHdfsService.listFiles();
-                logger.debug("Retrieved {} files from WebHDFS", files.size());
-            }
-        } catch (Exception e) {
-            logger.error("Error listing files in {} mode", isLocalMode ? "local" : "HDFS", e);
-            files = List.of();
-            hdfsDisconnected = !isLocalMode; // HDFS disconnected if not in local mode
-            
-            String errorMessage = isLocalMode ? 
-                "Local storage error: " + e.getMessage() : 
-                "HDFS is disconnected: " + e.getMessage();
-            model.addAttribute("message", errorMessage);
-        }
-        
-        model.addAttribute("files", files);
-        model.addAttribute("isPseudoop", properties.isPseudoop());
-        model.addAttribute("isHdfsMode", !isLocalMode);
-        model.addAttribute("mode", mode);
-        model.addAttribute("hdfsDisconnected", hdfsDisconnected);
-        model.addAttribute("appVersion", properties.getAppVersion());
-        
-        return "uploadForm";
-    }
+    // UI route removed; app is API-only now
 
-    @GetMapping("/files/{filename:.+}")
-    @ResponseBody
-    public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
-        String decodedFilename;
-        try {
-            decodedFilename = java.net.URLDecoder.decode(filename, java.nio.charset.StandardCharsets.UTF_8.toString());
-        } catch (Exception e) {
-            decodedFilename = filename; // fallback
-        }
-        
-        String mode = properties.getMode();
-        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
-        
-        Resource file;
-        if (isLocalMode) {
-            file = storageService.loadAsResource(decodedFilename);
-        } else {
-            file = webHdfsService.downloadFile(decodedFilename);
-        }
-        return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION,
-            "attachment; filename=\"" + file.getFilename() + "\"").body(file);
-    }
+    // File download removed per API-only requirements
 
     /**
      * Handles file upload with proper validation, logging, and URL encoding.
@@ -143,38 +74,46 @@ public class FileUploadController {
      * @param model the Spring model for template rendering
      * @return the redirect target
      */
-    @PostMapping("/")
-    public String handleFileUpload(@RequestParam("file") MultipartFile file, Model model) {
+    @PostMapping("/api/files/upload")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> handleFileUploadApi(@RequestParam("file") MultipartFile file) {
         if (file == null || file.isEmpty()) {
             logger.warn("Attempted to upload null or empty file");
-            model.addAttribute("message", "Please select a file to upload");
-            return "redirect:/";
+            return ResponseEntity.badRequest().body(Map.of(
+                "status", "error",
+                "message", "Please select a file to upload",
+                "timestamp", System.currentTimeMillis()
+            ));
         }
-        
+
         String originalFilename = file.getOriginalFilename();
         String mode = properties.getMode();
         boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
-        
-        logger.info("Handling file upload: {} ({} bytes) in {} mode", 
+
+        logger.info("Handling file upload: {} ({} bytes) in {} mode",
             originalFilename, file.getSize(), isLocalMode ? "local" : "HDFS");
-        
+
         try {
             String publicUrl = processFileUpload(file, originalFilename);
-            
+
             // Always send JSON notification to Rabbit/stream
             output.send(publicUrl, properties.getMode());
-            
-            model.addAttribute("message", 
-                "You successfully uploaded " + originalFilename + "!");
-            
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("filename", originalFilename);
+            response.put("url", publicUrl);
+            response.put("timestamp", System.currentTimeMillis());
             logger.info("Successfully uploaded file: {} -> {}", originalFilename, publicUrl);
-            return "redirect:/";
-            
+            return ResponseEntity.ok(response);
+
         } catch (Exception e) {
             logger.error("Failed to upload file: {}", originalFilename, e);
-            model.addAttribute("message", 
-                "Failed to upload file: " + originalFilename + ". Error: " + e.getMessage());
-            return "redirect:/";
+            return ResponseEntity.status(500).body(Map.of(
+                "status", "error",
+                "message", "Failed to upload file: " + originalFilename + ". Error: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            ));
         }
     }
     
@@ -302,19 +241,30 @@ public class FileUploadController {
             
             try {
                 if (isLocalMode) {
-                    // For local mode, we'll create basic file details
+                    // Local mode: compute size/type and derive state and URL
                     List<String> files = storageService.loadAll()
                         .map(path -> path.getFileName().toString())
                         .collect(Collectors.toList());
-                    
+
                     for (String filename : files) {
-                        Map<String, Object> fileInfo = new HashMap<>();
-                        fileInfo.put("filename", filename);
-                        fileInfo.put("processed", false); // Default for local mode
-                        fileInfo.put("hash", ""); // No hash tracking in local mode
-                        fileInfo.put("size", 0L); // No size info in local mode
-                        fileInfo.put("modificationTime", 0L); // No time info in local mode
-                        fileDetails.add(fileInfo);
+                        try {
+                            java.nio.file.Path filePath = storageService.load(filename);
+                            long fileSize = java.nio.file.Files.size(filePath);
+                            long modificationTime = java.nio.file.Files.getLastModifiedTime(filePath).toMillis();
+                            String fileHash = processedFilesService.generateFileHash(filename, fileSize, modificationTime);
+                            boolean isProcessed = processedFilesService.isFileProcessed(fileHash);
+                            String url = UrlUtils.buildFileUrl(properties.getPublicAppUri(), "/api/files", filename);
+
+                            Map<String, Object> fileInfo = new HashMap<>();
+                            fileInfo.put("name", filename);
+                            fileInfo.put("size", fileSize);
+                            fileInfo.put("type", "file");
+                            fileInfo.put("state", isProcessed ? "processed" : "pending");
+                            fileInfo.put("url", url);
+                            fileDetails.add(fileInfo);
+                        } catch (Exception e) {
+                            logger.warn("Error computing file details for {}", filename, e);
+                        }
                     }
                 } else {
                     // Use WebHDFS for detailed file information
@@ -329,10 +279,20 @@ public class FileUploadController {
                         String fileHash = processedFilesService.generateFileHash(filename, size, modificationTime);
                         boolean isProcessed = processedFilesService.isFileProcessed(fileHash);
                         
-                        Map<String, Object> fileInfo = new HashMap<>(hdfsFile);
-                        fileInfo.put("processed", isProcessed);
-                        fileInfo.put("hash", fileHash);
-                        
+                        String baseUrl = properties.getWebhdfsUri();
+                        if (baseUrl == null || baseUrl.isEmpty()) {
+                            baseUrl = buildBaseUriFromHdfsUri();
+                        }
+                        String encodedFilename = UrlUtils.encodePathSegment(filename);
+                        String url = baseUrl.replaceAll("/$", "") + HdfsWatcherConstants.WEBHDFS_PATH +
+                                     properties.getHdfsPath().replaceAll("/$", "") + "/" + encodedFilename;
+
+                        Map<String, Object> fileInfo = new HashMap<>();
+                        fileInfo.put("name", filename);
+                        fileInfo.put("size", size);
+                        fileInfo.put("type", String.valueOf(hdfsFile.getOrDefault("type", "file")));
+                        fileInfo.put("state", isProcessed ? "processed" : "pending");
+                        fileInfo.put("url", url);
                         fileDetails.add(fileInfo);
                     }
                 }
@@ -566,7 +526,7 @@ public class FileUploadController {
             // For HDFS mode, build the WebHDFS URL
             String baseUrl = properties.getWebhdfsUri();
             String hdfsPath = properties.getHdfsPath();
-            String user = properties.getHdfsUser();
+            // user not needed for building immediate URL
             
             if (baseUrl == null || baseUrl.isEmpty()) {
                 // Fallback to hdfsUri logic
@@ -714,6 +674,39 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to clear processed files: " + e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            );
+            return ResponseEntity.status(500).body(response);
+        }
+    }
+
+    /**
+     * Reprocess-all: stop processing, clear all processed flags.
+     */
+    @PostMapping("/api/reprocess-all")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> reprocessAll() {
+        try {
+            // Stop processing first
+            boolean wasEnabled = processingStateService.isProcessingEnabled();
+            if (wasEnabled) {
+                processingStateService.disableProcessing();
+            }
+
+            int clearedCount = processedFilesService.clearAllProcessedFiles();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("processingEnabled", false);
+            response.put("clearedCount", clearedCount);
+            response.put("message", "Processing stopped and " + clearedCount + " processed files cleared");
+            response.put("timestamp", System.currentTimeMillis());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error performing reprocess-all", e);
+            Map<String, Object> response = Map.of(
+                "status", "error",
+                "message", "Failed to reprocess all: " + e.getMessage(),
                 "timestamp", System.currentTimeMillis()
             );
             return ResponseEntity.status(500).body(response);

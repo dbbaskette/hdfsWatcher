@@ -6,13 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -26,7 +24,7 @@ import java.util.Map;
  * Service for WebHDFS operations with proper logging and validation.
  */
 @Service
-public class WebHdfsService {
+public class WebHdfsService implements HealthIndicator {
     
     private static final Logger logger = LoggerFactory.getLogger(WebHdfsService.class);
     
@@ -438,6 +436,34 @@ public class WebHdfsService {
         if (filename.contains("..")) {
             throw new IllegalArgumentException(
                 HdfsWatcherConstants.ERROR_INVALID_PATH + ": " + filename);
+        }
+    }
+
+    @Override
+    public Health health() {
+        try {
+            // When pseudoop, report UP with detail
+            if (properties.isPseudoop()) {
+                return Health.up().withDetail("mode", "pseudoop").build();
+            }
+            // Attempt a lightweight LISTSTATUS to check connectivity
+            validateConfiguration();
+            String baseUrl = properties.getWebhdfsUri();
+            String hdfsPath = properties.getHdfsPath();
+            String user = properties.getHdfsUser();
+            baseUrl = baseUrl.replaceAll("/+$", "");
+            if (!hdfsPath.startsWith("/")) {
+                hdfsPath = "/" + hdfsPath;
+            }
+            String url = String.format("%s%s%s?op=%s&user.name=%s",
+                baseUrl, HdfsWatcherConstants.WEBHDFS_PATH, hdfsPath, HdfsWatcherConstants.WEBHDFS_OP_LISTSTATUS, user);
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                return Health.up().withDetail("webhdfs", "reachable").build();
+            }
+            return Health.down().withDetail("webhdfs", "non-2xx").build();
+        } catch (Exception e) {
+            return Health.down(e).build();
         }
     }
 }

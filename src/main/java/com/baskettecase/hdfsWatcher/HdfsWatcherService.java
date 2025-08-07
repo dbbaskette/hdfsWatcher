@@ -12,15 +12,15 @@ import org.apache.hadoop.fs.RemoteIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
-import java.util.HashSet;
-import java.util.Set;
+// removed unused imports
 import java.util.stream.Stream;
 
 /**
@@ -40,7 +40,7 @@ public class HdfsWatcherService {
     private final boolean pseudoop;
     private final java.nio.file.Path localWatchPath;
 
-    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output, ProcessedFilesService processedFilesService, ProcessingStateService processingStateService) throws Exception {
+    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output, ProcessedFilesService processedFilesService, ProcessingStateService processingStateService, MeterRegistry meterRegistry) throws Exception {
         this.properties = validateProperties(properties);
         this.output = validateOutput(output);
         this.processedFilesService = processedFilesService;
@@ -56,6 +56,14 @@ public class HdfsWatcherService {
             this.fileSystem = initializeHdfsConnection(properties);
             logger.info("HDFS connection initialized for: {}", properties.getHdfsUri());
         }
+
+        // Metrics
+        Gauge.builder("hdfswatcher.processing.enabled", () -> this.processingStateService.isProcessingEnabled() ? 1 : 0)
+            .description("Processing enabled state (1/0)")
+            .register(meterRegistry);
+        Gauge.builder("hdfswatcher.last.poll.timestamp", () -> this.lastPollTimestamp)
+            .description("Last poll timestamp (epoch millis)")
+            .register(meterRegistry);
     }
     
     /**
@@ -146,6 +154,7 @@ public class HdfsWatcherService {
     @Scheduled(fixedDelayString = "${hdfswatcher.pollInterval:60}000")
     public void pollHdfsDirectory() {
         try {
+            this.lastPollTimestamp = System.currentTimeMillis();
             if (pseudoop) {
                 pollLocalDirectory();
             } else {
@@ -312,6 +321,8 @@ public class HdfsWatcherService {
         
         return webhdfsUrl;
     }
+
+    private volatile long lastPollTimestamp = 0L;
     
     /**
      * Determines the base URI for WebHDFS operations.
