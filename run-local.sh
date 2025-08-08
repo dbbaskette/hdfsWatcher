@@ -49,7 +49,7 @@ EOF
 # Defaults
 MODE="standalone"
 PSEUDOOP="false"
-PORT="8080"
+PORT="8081"
 LOCAL_PATH="/tmp/hdfsWatcher"
 OUTPUT_DEST=""
 MONITOR_ENABLED="false"
@@ -186,6 +186,7 @@ while true; do
   echo "  3) Toggle processing"
   echo "  4) Show status"
   echo "  5) Show files"
+  echo "  6) Reprocess ALL (stop + clear processed)"
   echo "  q) Quit"
   read -r -p "Select: " choice
   case "$choice" in
@@ -199,6 +200,8 @@ while true; do
       curl -s "http://localhost:${PORT}/api/status" || true; echo ;;
     5)
       curl -s "http://localhost:${PORT}/api/files" || true; echo ;;
+    6)
+      curl -s -X POST "http://localhost:${PORT}/api/reprocess-all" || true; echo ;;
     q|Q)
       exit 0 ;;
     *)

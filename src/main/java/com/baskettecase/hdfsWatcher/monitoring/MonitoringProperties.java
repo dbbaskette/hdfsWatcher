@@ -11,6 +11,7 @@ public class MonitoringProperties {
     private String instanceId;
     private int emitIntervalSeconds = 10;
     private boolean rabbitmqAutoDeclare = true;
+    private boolean emitHeartbeats = false;
 
     public boolean isRabbitmqEnabled() { return rabbitmqEnabled; }
     public void setRabbitmqEnabled(boolean rabbitmqEnabled) { this.rabbitmqEnabled = rabbitmqEnabled; }
@@ -22,6 +23,8 @@ public class MonitoringProperties {
     public void setEmitIntervalSeconds(int emitIntervalSeconds) { this.emitIntervalSeconds = emitIntervalSeconds; }
     public boolean isRabbitmqAutoDeclare() { return rabbitmqAutoDeclare; }
     public void setRabbitmqAutoDeclare(boolean rabbitmqAutoDeclare) { this.rabbitmqAutoDeclare = rabbitmqAutoDeclare; }
+    public boolean isEmitHeartbeats() { return emitHeartbeats; }
+    public void setEmitHeartbeats(boolean emitHeartbeats) { this.emitHeartbeats = emitHeartbeats; }
 }
 
 

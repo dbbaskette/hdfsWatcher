@@ -1,6 +1,7 @@
 package com.baskettecase.hdfsWatcher;
 
 import com.baskettecase.hdfsWatcher.service.ProcessedFilesService;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import com.baskettecase.hdfsWatcher.service.ProcessingStateService;
 import com.baskettecase.hdfsWatcher.util.HdfsWatcherConstants;
 import com.baskettecase.hdfsWatcher.util.UrlUtils;
@@ -38,14 +39,24 @@ public class HdfsWatcherService {
     private final ProcessedFilesService processedFilesService;
     private final ProcessingStateService processingStateService;
     private final boolean pseudoop;
+    private final RabbitTemplate rabbitTemplate;
+    private final com.baskettecase.hdfsWatcher.monitoring.MonitoringProperties monitoringProperties;
     private final java.nio.file.Path localWatchPath;
 
-    public HdfsWatcherService(HdfsWatcherProperties properties, HdfsWatcherOutput output, ProcessedFilesService processedFilesService, ProcessingStateService processingStateService, MeterRegistry meterRegistry) throws Exception {
+    public HdfsWatcherService(HdfsWatcherProperties properties,
+                              HdfsWatcherOutput output,
+                              ProcessedFilesService processedFilesService,
+                              ProcessingStateService processingStateService,
+                              MeterRegistry meterRegistry,
+                              RabbitTemplate rabbitTemplate,
+                              com.baskettecase.hdfsWatcher.monitoring.MonitoringProperties monitoringProperties) throws Exception {
         this.properties = validateProperties(properties);
         this.output = validateOutput(output);
         this.processedFilesService = processedFilesService;
         this.processingStateService = processingStateService;
         this.pseudoop = properties.isPseudoop();
+        this.rabbitTemplate = rabbitTemplate;
+        this.monitoringProperties = monitoringProperties;
         logger.info("Initializing HdfsWatcherService in {} mode", pseudoop ? "pseudoop" : "HDFS");
         if (this.pseudoop) {
             this.localWatchPath = initializeLocalStorage(properties.getLocalStoragePath());
@@ -204,7 +215,9 @@ public class HdfsWatcherService {
                 // Process the file - send to queue first, then mark as processed
                 try {
                     String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
+                    publishFileEvent("FILE_START", fileStatus.getPath().getName());
                     output.send(webhdfsUrl, properties.getMode());
+                    publishFileEvent("FILE_COMPLETE", fileStatus.getPath().getName());
                     
                     // Only mark as processed after successful queue send
                     processedFilesService.markFileAsProcessed(fileHash);
@@ -279,7 +292,9 @@ public class HdfsWatcherService {
                         HdfsWatcherConstants.FILES_PATH, 
                         fileName
                     );
+                    publishFileEvent("FILE_START", fileName);
                     output.send(fileUrl, properties.getMode());
+                    publishFileEvent("FILE_COMPLETE", fileName);
                     
                     // Only mark as processed after successful queue send
                     processedFilesService.markFileAsProcessed(fileHash);
@@ -301,6 +316,39 @@ public class HdfsWatcherService {
             logger.error("Error polling local directory: {}", localWatchPath, e);
         } catch (Exception e) {
             logger.error("Unexpected error during local polling", e);
+        }
+    }
+
+    private void publishFileEvent(String eventType, String filename) {
+        try {
+            if (monitoringProperties != null && monitoringProperties.isRabbitmqEnabled()) {
+                java.util.Map<String, Object> evt = new java.util.LinkedHashMap<>();
+
+                String runtimeName = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+                String instanceId = (monitoringProperties.getInstanceId() != null && !monitoringProperties.getInstanceId().isBlank())
+                    ? monitoringProperties.getInstanceId()
+                    : ("hdfsWatcher-" + runtimeName);
+
+                evt.put("instanceId", instanceId);
+                evt.put("timestamp", java.time.OffsetDateTime.now().toString());
+                evt.put("event", eventType);
+                evt.put("status", processingStateService.isProcessingEnabled() ? "PROCESSING" : "IDLE");
+                evt.put("hostname", properties.getHostname());
+                if (properties.getPublicHostname() != null) {
+                    evt.put("publicHostname", properties.getPublicHostname());
+                }
+                evt.put("filename", filename);
+
+                java.util.Map<String, Object> meta = new java.util.LinkedHashMap<>();
+                meta.put("service", "hdfsWatcher");
+                meta.put("processingStage", "processing");
+                meta.put("bindingState", processingStateService.isProcessingEnabled() ? "running" : "stopped");
+                meta.put("inputMode", properties.getMode());
+                evt.put("meta", meta);
+                String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(evt);
+                rabbitTemplate.convertAndSend("", monitoringProperties.getQueueName(), json);
+            }
+        } catch (Exception ignore) {
         }
     }
 

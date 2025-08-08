@@ -241,11 +241,17 @@ INIT message example
 {
   "instanceId": "hdfsWatcher-0",
   "timestamp": "2025-08-08T14:23:45Z",
+  "event": "INIT",
   "status": "DISABLED",
   "uptime": "0s",
   "hostname": "ip-10-0-1-23.ec2.internal",
   "publicHostname": "hdfswatcher-blue.cfapps.io",
-  "meta": { "service": "hdfsWatcher" }
+  "port": 8080,
+  "internalUrl": "http://ip-10-0-1-23.ec2.internal:8080",
+  "publicUrl": "https://hdfswatcher-blue.cfapps.io",
+  "publicPort": 443,
+  "url": "https://hdfswatcher-blue.cfapps.io",
+  "meta": { "service": "hdfsWatcher", "bindingState": "stopped", "inputMode": "cloud" }
 }
 ```
 
@@ -254,10 +260,16 @@ Heartbeat example
 {
   "instanceId": "hdfsWatcher-0",
   "timestamp": "2025-08-08T14:25:15Z",
+  "event": "HEARTBEAT",
   "status": "PROCESSING",
   "uptime": "0h 1m 30s",
   "hostname": "ip-10-0-1-23.ec2.internal",
   "publicHostname": "hdfswatcher-blue.cfapps.io",
+  "port": 8080,
+  "internalUrl": "http://ip-10-0-1-23.ec2.internal:8080",
+  "publicUrl": "https://hdfswatcher-blue.cfapps.io",
+  "publicPort": 443,
+  "url": "https://hdfswatcher-blue.cfapps.io",
   "currentFile": null,
   "filesProcessed": 0,
   "filesTotal": 0,
@@ -268,7 +280,7 @@ Heartbeat example
   "lastError": null,
   "memoryUsedMB": 420,
   "pendingMessages": 0,
-  "meta": { "service": "hdfsWatcher" }
+  "meta": { "service": "hdfsWatcher", "bindingState": "running", "inputMode": "cloud" }
 }
 ```
 
