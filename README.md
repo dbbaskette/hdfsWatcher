@@ -202,6 +202,57 @@ Actuator is enabled and exposes health, info, and metrics.
 
 Tip: Use Prometheus or your monitoring stack to scrape these metrics.
 
+## 📡 Monitoring (RabbitMQ)
+
+This app can emit lightweight monitoring messages to a shared RabbitMQ queue for your external UI.
+
+- Enable via properties:
+  - `app.monitoring.rabbitmq.enabled=true`
+  - `app.monitoring.rabbitmq.queue-name=pipeline.metrics`
+  - `app.monitoring.instance-id=hdfsWatcher-0` (optional)
+  - `app.monitoring.emit-interval-seconds=10`
+  - Plus your Rabbit connection: `spring.rabbitmq.*`
+
+- Behavior:
+  - On startup: sends an INIT message immediately with minimal fields
+  - Then every N seconds: sends a heartbeat with extended fields
+
+INIT message example
+```json
+{
+  "instanceId": "hdfsWatcher-0",
+  "timestamp": "2025-08-08T14:23:45Z",
+  "status": "DISABLED",
+  "uptime": "0s",
+  "hostname": "ip-10-0-1-23.ec2.internal",
+  "publicHostname": "hdfswatcher-blue.cfapps.io",
+  "meta": { "service": "hdfsWatcher" }
+}
+```
+
+Heartbeat example
+```json
+{
+  "instanceId": "hdfsWatcher-0",
+  "timestamp": "2025-08-08T14:25:15Z",
+  "status": "PROCESSING",
+  "uptime": "0h 1m 30s",
+  "hostname": "ip-10-0-1-23.ec2.internal",
+  "publicHostname": "hdfswatcher-blue.cfapps.io",
+  "currentFile": null,
+  "filesProcessed": 0,
+  "filesTotal": 0,
+  "totalChunks": 0,
+  "processedChunks": 0,
+  "processingRate": 0,
+  "errorCount": 0,
+  "lastError": null,
+  "memoryUsedMB": 420,
+  "pendingMessages": 0,
+  "meta": { "service": "hdfsWatcher" }
+}
+```
+
 ## 🏗️ Architecture
 
 ### Core Components
@@ -229,6 +280,28 @@ Tip: Use Prometheus or your monitoring stack to scrape these metrics.
 ### Cloud Foundry
 ```bash
 cf push hdfsWatcher --random-route
+```
+
+### Spring Cloud Data Flow (SCDF) app properties mapping
+
+When deploying as a Source named `hdfsWatcher`, configure HDFS and routing like this:
+
+```yaml
+# hdfsWatcher (Source) Configuration
+app.hdfsWatcher.hdfsWatcher.hdfsUser: "hdfs"
+app.hdfsWatcher.hdfsWatcher.hdfsUri: "hdfs://<namenode-host>:8020"
+app.hdfsWatcher.hdfsWatcher.hdfsPath: "/path/to/watch"
+app.hdfsWatcher.hdfsWatcher.webhdfsUri: "http://<namenode-host>:9870"
+app.hdfsWatcher.hdfsWatcher.pseudoop: "false"
+app.hdfsWatcher.hdfsWatcher.pollInterval: "5"           # seconds
+app.hdfsWatcher.spring.profiles.active: "cloud"
+app.hdfsWatcher.spring.cloud.config.enabled: "false"
+app.hdfsWatcher.spring.cloud.stream.bindings.output.destination: "hdfswatcher-textproc"
+
+# Optional: enable monitoring publisher
+app.hdfsWatcher.app.monitoring.rabbitmq.enabled: "true"
+app.hdfsWatcher.app.monitoring.rabbitmq.queue-name: "pipeline.metrics"
+app.hdfsWatcher.app.monitoring.emit-interval-seconds: "10"
 ```
 
 ### Docker

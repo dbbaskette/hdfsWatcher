@@ -69,6 +69,10 @@ public class HdfsWatcherProperties {
 
     private String appVersion;
 
+    // Host information for monitoring
+    private String hostname;        // internal FQDN (canonical)
+    private String publicHostname;  // routable host from publicAppUri
+
     @Autowired
     private transient Environment environment; // Used to access environment variables
 
@@ -105,6 +109,25 @@ public class HdfsWatcherProperties {
         } catch (Exception e) {
             logger.error("{} Failed to read version from JAR manifest", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, e);
             this.appVersion = null;
+        }
+
+        // Resolve internal hostname (FQDN)
+        try {
+            this.hostname = java.net.InetAddress.getLocalHost().getCanonicalHostName();
+            logger.info("{} Resolved hostname: {}", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, this.hostname);
+        } catch (Exception e) {
+            logger.warn("{} Failed to resolve hostname (using 'localhost')", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, e);
+            this.hostname = "localhost";
+        }
+
+        // Resolve public hostname from publicAppUri
+        try {
+            java.net.URI uri = new java.net.URI(this.publicAppUri);
+            this.publicHostname = uri.getHost();
+            logger.info("{} Resolved publicHostname: {}", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, this.publicHostname);
+        } catch (Exception e) {
+            logger.warn("{} Failed to parse publicAppUri for publicHostname", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, e);
+            this.publicHostname = null;
         }
     }
     
@@ -211,5 +234,24 @@ public class HdfsWatcherProperties {
 
     public String getAppVersion() {
         return appVersion;
+    }
+
+    /** Internal FQDN suitable for logging/monitoring within the runtime environment. */
+    public String getHostname() {
+        return hostname != null ? hostname : "localhost";
+    }
+
+    /** Routable host derived from publicAppUri (e.g., Cloud Foundry route); may be null locally. */
+    public String getPublicHostname() {
+        if (publicHostname != null) {
+            return publicHostname;
+        }
+        // Best-effort fallback: extract from current publicAppUri if possible
+        try {
+            java.net.URI uri = new java.net.URI(getPublicAppUri());
+            return uri.getHost();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
