@@ -2,7 +2,7 @@
 
 <div align="center">
   <img src="images/hdfswatcher.png" alt="HDFS Watcher Logo" width="300">
-  <h1>HDFS Watcher v3.10.0</h1>
+  <h1>HDFS Watcher</h1>
   <p>⚡ API-only Spring Boot service that monitors HDFS and emits file URLs for your RAG/data pipelines.</p>
 
   <a href="https://www.java.com/"><img alt="Java" src="https://img.shields.io/badge/Java-21-007396?logo=java&logoColor=white"></a>
@@ -372,4 +372,4 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**HDFS Watcher v3.10.0** — Headless, API-only HDFS monitoring service for modern data and RAG pipelines. ✨
+**HDFS Watcher** — Headless, API-only HDFS monitoring service for modern data and RAG pipelines. ✨
