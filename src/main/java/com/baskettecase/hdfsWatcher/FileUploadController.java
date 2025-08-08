@@ -47,8 +47,8 @@ public class FileUploadController {
         this.processedFilesService = validateService(processedFilesService, "ProcessedFilesService");
         this.processingStateService = validateService(processingStateService, "ProcessingStateService");
         
-        String mode = properties.getMode();
-        boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            String mode = properties.getMode();
+            boolean isLocalMode = properties.isPseudoop();
         logger.info("FileUploadController initialized in {} mode", 
             isLocalMode ? "local" : "HDFS");
     }
@@ -173,8 +173,7 @@ public class FileUploadController {
     @ResponseBody
     public ResponseEntity<Map<String, Object>> getDetailedStatus() {
         try {
-            String mode = properties.getMode();
-            boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            boolean isLocalMode = properties.isPseudoop();
             
             // Get file listing
             List<String> files = new ArrayList<>();
@@ -202,7 +201,7 @@ public class FileUploadController {
             
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
-            response.put("mode", mode);
+            response.put("mode", properties.getMode());
             response.put("isLocalMode", isLocalMode);
             response.put("hdfsDisconnected", hdfsDisconnected);
             response.put("totalFiles", files.size());
@@ -233,8 +232,7 @@ public class FileUploadController {
     @ResponseBody
     public ResponseEntity<Map<String, Object>> getFilesWithStatus() {
         try {
-            String mode = properties.getMode();
-            boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            boolean isLocalMode = properties.isPseudoop();
             
             List<Map<String, Object>> fileDetails = new ArrayList<>();
             boolean hdfsDisconnected = false;
@@ -307,7 +305,7 @@ public class FileUploadController {
             response.put("files", fileDetails);
             response.put("totalFiles", fileDetails.size());
             response.put("hdfsDisconnected", hdfsDisconnected);
-            response.put("mode", mode);
+            response.put("mode", properties.getMode());
             response.put("processingEnabled", processingStateService.isProcessingEnabled());
             response.put("processingState", processingStateService.getProcessingState());
             response.put("timestamp", System.currentTimeMillis());
@@ -401,7 +399,7 @@ public class FileUploadController {
             List<String> failedHashes = new ArrayList<>();
             
             String mode = properties.getMode();
-            boolean isLocalMode = "standalone".equals(mode) && properties.isPseudoop();
+            boolean isLocalMode = properties.isPseudoop();
             
             for (String hash : fileHashes) {
                 try {

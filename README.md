@@ -69,6 +69,24 @@ java -jar target/hdfsWatcher-3.10.0.jar \
 ### 4. Use the API (no UI)
 The app no longer serves a browser UI. Use curl or your management service.
 
+### 5. Local runner (with Rabbit auto-setup)
+
+Run locally with Dockerized RabbitMQ and an interactive menu:
+
+```bash
+# Pseudoop (local dir), cloud-mode stream + monitoring
+./run-local.sh -m cloud -p true -l "$(pwd)/files" -q hdfswatcher-textproc -M -Q pipeline.metrics
+
+# Standalone (console messages) + monitoring to Rabbit
+./run-local.sh -m standalone -p true -l "$(pwd)/files" -M -Q pipeline.metrics
+```
+
+What it does:
+- Starts RabbitMQ container (5672/15672), sets `spring.rabbitmq.host=localhost`
+- Auto-declares stream exchange+queue for `output.destination` and binds with `#`
+- Auto-declares monitoring queue `pipeline.metrics`
+- Starts app, then offers an interactive menu (enable/disable/toggle processing, show status/files)
+
 ## 🔧 API Endpoints
 
 ### Processing Control
@@ -206,11 +224,12 @@ Tip: Use Prometheus or your monitoring stack to scrape these metrics.
 
 This app can emit lightweight monitoring messages to a shared RabbitMQ queue for your external UI.
 
-- Enable via properties:
-  - `app.monitoring.rabbitmq.enabled=true`
-  - `app.monitoring.rabbitmq.queue-name=pipeline.metrics`
+- Enable via properties (kebab-case shown):
+  - `app.monitoring.rabbitmq-enabled=true`
+  - `app.monitoring.queue-name=pipeline.metrics`
   - `app.monitoring.instance-id=hdfsWatcher-0` (optional)
   - `app.monitoring.emit-interval-seconds=10`
+  - `app.monitoring.rabbitmq-auto-declare=true` (local convenience)
   - Plus your Rabbit connection: `spring.rabbitmq.*`
 
 - Behavior:
@@ -284,6 +303,8 @@ cf push hdfsWatcher --random-route
 
 ### Spring Cloud Data Flow (SCDF) app properties mapping
 
+### Spring Cloud Data Flow (SCDF) app properties mapping
+
 When deploying as a Source named `hdfsWatcher`, configure HDFS and routing like this:
 
 ```yaml
@@ -299,9 +320,13 @@ app.hdfsWatcher.spring.cloud.config.enabled: "false"
 app.hdfsWatcher.spring.cloud.stream.bindings.output.destination: "hdfswatcher-textproc"
 
 # Optional: enable monitoring publisher
-app.hdfsWatcher.app.monitoring.rabbitmq.enabled: "true"
-app.hdfsWatcher.app.monitoring.rabbitmq.queue-name: "pipeline.metrics"
+app.hdfsWatcher.app.monitoring.rabbitmq-enabled: "true"
+app.hdfsWatcher.app.monitoring.queue-name: "pipeline.metrics"
 app.hdfsWatcher.app.monitoring.emit-interval-seconds: "10"
+
+# Recommended for CF/SCDF (disable local auto-declares)
+app.hdfsWatcher.app.stream.auto-declare: "false"
+app.hdfsWatcher.app.monitoring.rabbitmq-auto-declare: "false"
 ```
 
 ### Docker

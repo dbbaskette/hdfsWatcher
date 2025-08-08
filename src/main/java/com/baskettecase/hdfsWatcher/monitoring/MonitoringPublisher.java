@@ -5,6 +5,8 @@ import com.baskettecase.hdfsWatcher.service.ProcessingStateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.core.AmqpAdmin;
+import org.springframework.amqp.core.Queue;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -25,16 +27,19 @@ public class MonitoringPublisher {
     private final MonitoringProperties props;
     private final RabbitTemplate rabbitTemplate;
     private final ProcessingStateService processingStateService;
+    private final AmqpAdmin amqpAdmin;
     private final HdfsWatcherProperties hdfsProps;
 
     public MonitoringPublisher(MonitoringProperties props,
                                RabbitTemplate rabbitTemplate,
                                ProcessingStateService processingStateService,
-                               HdfsWatcherProperties hdfsProps) {
+                               HdfsWatcherProperties hdfsProps,
+                               AmqpAdmin amqpAdmin) {
         this.props = props;
         this.rabbitTemplate = rabbitTemplate;
         this.processingStateService = processingStateService;
         this.hdfsProps = hdfsProps;
+        this.amqpAdmin = amqpAdmin;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -43,6 +48,11 @@ public class MonitoringPublisher {
             return;
         }
         try {
+            // Ensure monitoring queue exists if auto-declare is enabled
+            if (props.isRabbitmqAutoDeclare()) {
+                Queue q = new Queue(props.getQueueName(), true);
+                amqpAdmin.declareQueue(q);
+            }
             Map<String, Object> init = buildInitPayload();
             String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(init);
             rabbitTemplate.convertAndSend("", props.getQueueName(), json);

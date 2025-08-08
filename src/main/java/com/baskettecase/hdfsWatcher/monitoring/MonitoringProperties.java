@@ -10,6 +10,7 @@ public class MonitoringProperties {
     private String queueName = "pipeline.metrics";
     private String instanceId;
     private int emitIntervalSeconds = 10;
+    private boolean rabbitmqAutoDeclare = true;
 
     public boolean isRabbitmqEnabled() { return rabbitmqEnabled; }
     public void setRabbitmqEnabled(boolean rabbitmqEnabled) { this.rabbitmqEnabled = rabbitmqEnabled; }
@@ -19,6 +20,8 @@ public class MonitoringProperties {
     public void setInstanceId(String instanceId) { this.instanceId = instanceId; }
     public int getEmitIntervalSeconds() { return emitIntervalSeconds; }
     public void setEmitIntervalSeconds(int emitIntervalSeconds) { this.emitIntervalSeconds = emitIntervalSeconds; }
+    public boolean isRabbitmqAutoDeclare() { return rabbitmqAutoDeclare; }
+    public void setRabbitmqAutoDeclare(boolean rabbitmqAutoDeclare) { this.rabbitmqAutoDeclare = rabbitmqAutoDeclare; }
 }
 
 
