@@ -281,14 +281,25 @@ public class FileUploadController {
                         if (baseUrl == null || baseUrl.isEmpty()) {
                             baseUrl = buildBaseUriFromHdfsUri();
                         }
+                        // Normalize
+                        baseUrl = baseUrl.replaceAll("/+$", "");
+                        String hdfsPath = properties.getHdfsPath();
+                        if (hdfsPath == null) { hdfsPath = "/"; }
+                        if (!hdfsPath.startsWith("/")) { hdfsPath = "/" + hdfsPath; }
                         String encodedFilename = UrlUtils.encodePathSegment(filename);
-                        String url = baseUrl.replaceAll("/$", "") + HdfsWatcherConstants.WEBHDFS_PATH +
-                                     properties.getHdfsPath().replaceAll("/$", "") + "/" + encodedFilename;
+                        // Build a direct OPEN url including user for compatibility with tools/UIs
+                        String url = String.format("%s%s%s/%s?op=%s&user.name=%s",
+                                baseUrl,
+                                HdfsWatcherConstants.WEBHDFS_PATH,
+                                hdfsPath,
+                                encodedFilename,
+                                HdfsWatcherConstants.WEBHDFS_OP_OPEN,
+                                properties.getHdfsUser());
 
                         Map<String, Object> fileInfo = new HashMap<>();
                         fileInfo.put("name", filename);
                         fileInfo.put("size", size);
-                        fileInfo.put("type", String.valueOf(hdfsFile.getOrDefault("type", "file")));
+                        fileInfo.put("type", String.valueOf(hdfsFile.getOrDefault("type", "file")).toLowerCase());
                         fileInfo.put("state", isProcessed ? "processed" : "pending");
                         fileInfo.put("url", url);
                         fileDetails.add(fileInfo);
