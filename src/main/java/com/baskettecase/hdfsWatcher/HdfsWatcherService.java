@@ -85,6 +85,7 @@ public class HdfsWatcherService {
             throw new IllegalArgumentException("HdfsWatcherProperties cannot be null");
         }
         
+        // Validate poll interval
         if (properties.getPollInterval() < HdfsWatcherConstants.MIN_POLL_INTERVAL || 
             properties.getPollInterval() > HdfsWatcherConstants.MAX_POLL_INTERVAL) {
             throw new IllegalArgumentException(
@@ -94,11 +95,29 @@ public class HdfsWatcherService {
         }
         
         if (!properties.isPseudoop()) {
-            if (properties.getHdfsUri() == null || properties.getHdfsUri().trim().isEmpty()) {
-                throw new IllegalArgumentException("HDFS URI cannot be null or empty when not in pseudoop mode");
+            // Validate HDFS configuration
+            if (properties.getHdfsPaths() == null || properties.getHdfsPaths().isEmpty()) {
+                throw new IllegalArgumentException("hdfswatcher.hdfs-paths must be configured when not in pseudoop mode");
             }
-            if (properties.getHdfsPath() == null || properties.getHdfsPath().trim().isEmpty()) {
-                throw new IllegalArgumentException("HDFS path cannot be null or empty when not in pseudoop mode");
+            
+            // Validate each HDFS path
+            for (String hdfsPath : properties.getHdfsPaths()) {
+                if (hdfsPath == null || hdfsPath.trim().isEmpty()) {
+                    throw new IllegalArgumentException("HDFS path cannot be null or empty");
+                }
+            }
+            
+            if (properties.getHdfsUri() == null || properties.getHdfsUri().trim().isEmpty()) {
+                throw new IllegalArgumentException("hdfswatcher.hdfs-uri must be configured when not in pseudoop mode");
+            }
+            
+            if (properties.getHdfsUser() == null || properties.getHdfsUser().trim().isEmpty()) {
+                throw new IllegalArgumentException("hdfswatcher.hdfs-user must be configured when not in pseudoop mode");
+            }
+        } else {
+            // Validate pseudoop configuration
+            if (properties.getLocalStoragePath() == null || properties.getLocalStoragePath().trim().isEmpty()) {
+                throw new IllegalArgumentException("hdfswatcher.local-storage-path must be configured in pseudoop mode");
             }
         }
         
@@ -169,7 +188,7 @@ public class HdfsWatcherService {
             if (pseudoop) {
                 pollLocalDirectory();
             } else {
-                pollHdfs();
+                pollHdfsDirectories();
             }
         } catch (Exception e) {
             logger.error("Unexpected error during directory polling", e);
@@ -177,12 +196,26 @@ public class HdfsWatcherService {
     }
     
     /**
-     * Polls HDFS directory for new files with proper error handling and duplicate prevention.
+     * Polls multiple HDFS directories for new files.
      */
-    private void pollHdfs() {
+    private void pollHdfsDirectories() {
+        for (String hdfsPath : properties.getHdfsPaths()) {
+            try {
+                pollHdfsDirectory(hdfsPath);
+            } catch (Exception e) {
+                logger.error("Error polling HDFS directory: {}", hdfsPath, e);
+                // Continue with other directories even if one fails
+            }
+        }
+    }
+    
+    /**
+     * Polls a single HDFS directory for new files with proper error handling and duplicate prevention.
+     */
+    private void pollHdfsDirectory(String hdfsPath) {
         try {
             RemoteIterator<LocatedFileStatus> files = fileSystem.listFiles(
-                new Path(properties.getHdfsPath()), 
+                new Path(hdfsPath), 
                 false
             );
             int processedCount = 0;
@@ -245,14 +278,25 @@ public class HdfsWatcherService {
             }
             
             if (processedCount > 0 || skippedCount > 0) {
-                logger.info("HDFS polling completed: {} files processed, {} files skipped", 
-                    processedCount, skippedCount);
+                logger.info("HDFS polling completed for {}: {} files processed, {} files skipped", 
+                    hdfsPath, processedCount, skippedCount);
             }
             
         } catch (IOException e) {
-            logger.error("Error polling HDFS directory: {}", properties.getHdfsPath(), e);
+            logger.error("Error polling HDFS directory: {}", hdfsPath, e);
         } catch (Exception e) {
-            logger.error("Unexpected error during HDFS polling", e);
+            logger.error("Unexpected error during HDFS polling for directory: {}", hdfsPath, e);
+        }
+    }
+    
+    /**
+     * @deprecated Use pollHdfsDirectories() instead for multiple directory support
+     */
+    @Deprecated
+    private void pollHdfs() {
+        // For backward compatibility, poll the first HDFS path
+        if (!properties.getHdfsPaths().isEmpty()) {
+            pollHdfsDirectory(properties.getHdfsPaths().get(0));
         }
     }
     

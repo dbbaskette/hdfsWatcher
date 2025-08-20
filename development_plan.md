@@ -38,6 +38,50 @@ API Surface (target state)
 
 Phases and Steps
 
+## ✅ Completed Phases
+
+### Phase 1: UI Removal and Basic API (COMPLETED)
+- [x] Remove Thymeleaf dependency
+- [x] Remove templates and static assets
+- [x] Remove UI-specific controller methods
+- [x] Convert file upload to API endpoint (`/api/files/upload`)
+- [x] Update API response format
+
+### Phase 2: API Normalization and Reprocess-All (COMPLETED)
+- [x] Normalize API endpoint naming (`/api/files/upload`, `/api/reprocess-all`)
+- [x] Implement `POST /api/reprocess-all` endpoint
+- [x] Fix HDFS URL generation with `?op=OPEN&user.name=<hdfsUser>`
+- [x] Ensure consistent response schema for `GET /api/files`
+
+### Phase 3: Actuator Health and Metrics (COMPLETED)
+- [x] Add Spring Boot Actuator dependency
+- [x] Expose health, info, and metrics endpoints
+- [x] Implement custom health indicators for HDFS and RabbitMQ
+- [x] Add custom metrics for processing state and last poll timestamp
+- [x] Configure endpoint exposure and health details
+
+### Phase 4: RabbitMQ Monitoring Integration (COMPLETED)
+- [x] Add Spring AMQP dependency
+- [x] Create MonitoringProperties configuration
+- [x] Implement MonitoringPublisher with INIT and HEARTBEAT events
+- [x] Align with AMQP_MESSAGE_SCHEMA.md specification
+- [x] Auto-declare monitoring queue for local testing
+- [x] Send FILE_PROCESSED events for each processed file
+
+### Phase 5: Local Development Enhancements (COMPLETED)
+- [x] Enhance run-local.sh with RabbitMQ Docker auto-setup
+- [x] Add interactive CLI menu for processing controls
+- [x] Implement StreamAutoDeclareConfig for main stream queue
+- [x] Support pseudoop and standalone modes
+- [x] Add --no-build option and enhanced help
+
+### Phase 6: Multiple HDFS Paths Support (COMPLETED)
+- [x] Extend HdfsWatcherProperties to support multiple HDFS directories
+- [x] Update HdfsWatcherService to poll multiple directories
+- [x] Maintain backward compatibility with existing hdfsPath property
+- [x] Update configuration files and metadata
+- [x] Document new feature in README and SCDF examples
+
 Phase 0 — Baseline and alignment [Planned]
 - Review versions (see `versions.txt`) and confirm Java/Spring Boot alignment
 - Define final endpoint names and response schema (captured above)

@@ -138,11 +138,17 @@ spring.servlet.multipart.max-request-size=512MB
 #### HDFS Mode (Default)
 ```properties
 hdfswatcher.hdfs-uri=hdfs://localhost:9000
-hdfswatcher.hdfs-path=/
+hdfswatcher.hdfs-paths=/
+hdfswatcher.hdfs-path=/                    # deprecated: use hdfs-paths instead
 hdfswatcher.hdfs-user=${USER}
 hdfswatcher.poll-interval=60
 hdfswatcher.webhdfs-uri=http://localhost:50070
 hdfswatcher.mode=standalone
+```
+
+**Multiple HDFS Directories**: You can now watch multiple HDFS directories by setting `hdfswatcher.hdfs-paths` to a comma-separated list:
+```properties
+hdfswatcher.hdfs-paths=/policies,/documents,/reports
 ```
 
 #### Pseudo-operational Mode
@@ -315,15 +321,14 @@ cf push hdfsWatcher --random-route
 
 ### Spring Cloud Data Flow (SCDF) app properties mapping
 
-### Spring Cloud Data Flow (SCDF) app properties mapping
-
 When deploying as a Source named `hdfsWatcher`, configure HDFS and routing like this:
 
 ```yaml
 # hdfsWatcher (Source) Configuration
 app.hdfsWatcher.hdfsWatcher.hdfsUser: "hdfs"
 app.hdfsWatcher.hdfsWatcher.hdfsUri: "hdfs://<namenode-host>:8020"
-app.hdfsWatcher.hdfsWatcher.hdfsPath: "/path/to/watch"
+app.hdfsWatcher.hdfsWatcher.hdfsPaths: "/policies,/documents,/reports"  # Multiple directories
+app.hdfsWatcher.hdfsWatcher.hdfsPath: "/policies"                       # deprecated: use hdfsPaths
 app.hdfsWatcher.hdfsWatcher.webhdfsUri: "http://<namenode-host>:9870"
 app.hdfsWatcher.hdfsWatcher.pseudoop: "false"
 app.hdfsWatcher.hdfsWatcher.pollInterval: "5"           # seconds

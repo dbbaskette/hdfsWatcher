@@ -26,9 +26,15 @@
       "defaultValue": "hdfs://localhost:9000"
     },
     {
+      "name": "hdfswatcher.hdfs-paths",
+      "type": "java.lang.String",
+      "description": "Comma-separated list of HDFS paths to watch (e.g., '/policies,/documents,/reports')",
+      "defaultValue": "/"
+    },
+    {
       "name": "hdfswatcher.hdfs-path",
       "type": "java.lang.String",
-      "description": "HDFS path to watch",
+      "description": "HDFS path to watch (deprecated: use hdfs-paths instead for multiple directory support)",
       "defaultValue": "/"
     },
     {

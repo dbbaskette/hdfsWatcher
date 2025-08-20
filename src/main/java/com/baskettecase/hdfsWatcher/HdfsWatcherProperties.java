@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 
 import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 
 /**
@@ -28,7 +29,11 @@ public class HdfsWatcherProperties {
      */
     private String webhdfsUri;
 
-    /** Path of the HDFS directory to watch */
+    /** Paths of the HDFS directories to watch (comma-separated) */
+    private List<String> hdfsPaths = Arrays.asList("/");
+    
+    /** @deprecated Use hdfsPaths instead for multiple directory support */
+    @Deprecated
     private String hdfsPath;
     /** Poll interval in seconds */
     private int pollInterval = 60;
@@ -79,6 +84,14 @@ public class HdfsWatcherProperties {
     @PostConstruct
     public void init() {
         logger.debug("Initializing HdfsWatcherProperties");
+        
+        // Handle backward compatibility for hdfsPath
+        if (hdfsPath != null && !hdfsPath.trim().isEmpty()) {
+            // If old hdfsPath is set, use it as the first path
+            hdfsPaths = Arrays.asList(hdfsPath.trim());
+            logger.info("{} Using legacy hdfsPath: {} (consider migrating to hdfsPaths)", 
+                HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPath);
+        }
         
         // 1. Check for an explicitly set public URI via environment variable
         this.publicAppUri = environment.getProperty(HdfsWatcherConstants.ENV_HDFSWATCHER_PUBLIC_APP_URI);
@@ -221,8 +234,19 @@ public class HdfsWatcherProperties {
     public String getWebhdfsUri() { return webhdfsUri; }
     public void setWebhdfsUri(String webhdfsUri) { this.webhdfsUri = webhdfsUri; }
 
-    public String getHdfsPath() { return hdfsPath; }
+    public List<String> getHdfsPaths() { return hdfsPaths; }
+    public void setHdfsPaths(List<String> hdfsPaths) { this.hdfsPaths = hdfsPaths; }
+    
+    /** @deprecated Use getHdfsPaths instead for multiple directory support */
+    @Deprecated
+    public String getHdfsPath() { 
+        return hdfsPaths != null && !hdfsPaths.isEmpty() ? hdfsPaths.get(0) : null; 
+    }
+    
+    /** @deprecated Use setHdfsPaths instead for multiple directory support */
+    @Deprecated
     public void setHdfsPath(String hdfsPath) { this.hdfsPath = hdfsPath; }
+    
     public int getPollInterval() { return pollInterval; }
     public void setPollInterval(int pollInterval) { this.pollInterval = pollInterval; }
     public String getHdfsUri() { return hdfsUri; }

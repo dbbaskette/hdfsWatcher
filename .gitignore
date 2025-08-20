@@ -26,3 +26,5 @@ release.sh
 .release.conf
 .release-exec
 
+*.yml
+*.properties
