@@ -199,11 +199,15 @@ public class HdfsWatcherService {
      * Polls multiple HDFS directories for new files.
      */
     private void pollHdfsDirectories() {
+        logger.debug("Starting HDFS polling for {} directories: {}", 
+            properties.getHdfsPaths().size(), properties.getHdfsPaths());
+        
         for (String hdfsPath : properties.getHdfsPaths()) {
             try {
+                logger.debug("Polling HDFS directory: '{}'", hdfsPath);
                 pollHdfsDirectory(hdfsPath);
             } catch (Exception e) {
-                logger.error("Error polling HDFS directory: {}", hdfsPath, e);
+                logger.error("Error polling HDFS directory: '{}'", hdfsPath, e);
                 // Continue with other directories even if one fails
             }
         }

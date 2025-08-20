@@ -81,6 +81,8 @@ Phases and Steps
 - [x] Maintain backward compatibility with existing hdfsPath property
 - [x] Update configuration files and metadata
 - [x] Document new feature in README and SCDF examples
+- [x] Fix comma-separated string parsing for hdfs-paths property
+- [x] Add debug logging for HDFS path processing
 
 Phase 0 — Baseline and alignment [Planned]
 - Review versions (see `versions.txt`) and confirm Java/Spring Boot alignment

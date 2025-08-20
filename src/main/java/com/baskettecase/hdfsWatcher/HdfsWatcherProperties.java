@@ -85,6 +85,17 @@ public class HdfsWatcherProperties {
     public void init() {
         logger.debug("Initializing HdfsWatcherProperties");
         
+        // Parse comma-separated hdfsPaths if it's a single string
+        if (hdfsPaths.size() == 1 && hdfsPaths.get(0).contains(",")) {
+            String pathsString = hdfsPaths.get(0);
+            hdfsPaths = Arrays.stream(pathsString.split(","))
+                .map(String::trim)
+                .filter(path -> !path.isEmpty())
+                .collect(java.util.stream.Collectors.toList());
+            logger.info("{} Parsed comma-separated hdfsPaths: {}", 
+                HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPaths);
+        }
+        
         // Handle backward compatibility for hdfsPath
         if (hdfsPath != null && !hdfsPath.trim().isEmpty()) {
             // If old hdfsPath is set, use it as the first path
@@ -92,6 +103,16 @@ public class HdfsWatcherProperties {
             logger.info("{} Using legacy hdfsPath: {} (consider migrating to hdfsPaths)", 
                 HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPath);
         }
+        
+        // Ensure we have at least one valid path
+        if (hdfsPaths.isEmpty()) {
+            hdfsPaths = Arrays.asList("/");
+            logger.warn("{} No valid HDFS paths configured, defaulting to: {}", 
+                HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPaths);
+        }
+        
+        logger.info("{} Final HDFS paths to watch: {}", 
+            HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPaths);
         
         // 1. Check for an explicitly set public URI via environment variable
         this.publicAppUri = environment.getProperty(HdfsWatcherConstants.ENV_HDFSWATCHER_PUBLIC_APP_URI);
@@ -235,7 +256,24 @@ public class HdfsWatcherProperties {
     public void setWebhdfsUri(String webhdfsUri) { this.webhdfsUri = webhdfsUri; }
 
     public List<String> getHdfsPaths() { return hdfsPaths; }
-    public void setHdfsPaths(List<String> hdfsPaths) { this.hdfsPaths = hdfsPaths; }
+    
+    public void setHdfsPaths(List<String> hdfsPaths) { 
+        this.hdfsPaths = hdfsPaths != null ? hdfsPaths : Arrays.asList("/");
+    }
+    
+    /**
+     * Setter that can handle both List and String inputs for flexible configuration binding
+     */
+    public void setHdfsPaths(String hdfsPathsString) {
+        if (hdfsPathsString != null && !hdfsPathsString.trim().isEmpty()) {
+            this.hdfsPaths = Arrays.stream(hdfsPathsString.split(","))
+                .map(String::trim)
+                .filter(path -> !path.isEmpty())
+                .collect(java.util.stream.Collectors.toList());
+        } else {
+            this.hdfsPaths = Arrays.asList("/");
+        }
+    }
     
     /** @deprecated Use getHdfsPaths instead for multiple directory support */
     @Deprecated
