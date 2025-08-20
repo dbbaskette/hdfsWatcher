@@ -86,17 +86,60 @@ public class WebHdfsService implements HealthIndicator {
     }
 
     /**
-     * Lists files with detailed metadata from WebHDFS.
+     * Lists files with detailed metadata from multiple WebHDFS directories.
      * 
-     * @return list of file details with metadata
+     * @return list of file details with metadata and source directory
      * @throws IllegalStateException if configuration is invalid
      * @throws RuntimeException if WebHDFS operation fails
      */
-    public List<Map<String, Object>> listFilesWithDetails() {
+    public List<Map<String, Object>> listFilesWithDetailsFromMultipleDirectories() {
         validateConfiguration();
         
+        List<Map<String, Object>> allFileDetails = new ArrayList<>();
+        
+        for (String hdfsPath : properties.getHdfsPaths()) {
+            try {
+                List<Map<String, Object>> directoryFiles = listFilesWithDetailsFromDirectory(hdfsPath);
+                
+                // Add source directory information to each file
+                for (Map<String, Object> file : directoryFiles) {
+                    // Extract just the directory name (e.g., "policies" from "/policies")
+                    String sourceDir = hdfsPath;
+                    if (sourceDir.startsWith("/")) {
+                        sourceDir = sourceDir.substring(1);
+                    }
+                    if (sourceDir.isEmpty()) {
+                        sourceDir = "root";
+                    }
+                    file.put("source", sourceDir);
+                }
+                
+                allFileDetails.addAll(directoryFiles);
+                logger.debug("{} Added {} files from directory: {}", 
+                    HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, directoryFiles.size(), hdfsPath);
+                    
+            } catch (Exception e) {
+                logger.error("{} Failed to list files from directory: {}", 
+                    HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, hdfsPath, e);
+                // Continue with other directories even if one fails
+            }
+        }
+        
+        logger.info("{} Successfully listed {} total files from {} directories", 
+            HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, allFileDetails.size(), properties.getHdfsPaths().size());
+        
+        return allFileDetails;
+    }
+    
+    /**
+     * Lists files with detailed metadata from a specific WebHDFS directory.
+     * 
+     * @param hdfsPath the HDFS directory path to list
+     * @return list of file details with metadata
+     * @throws RuntimeException if WebHDFS operation fails
+     */
+    private List<Map<String, Object>> listFilesWithDetailsFromDirectory(String hdfsPath) {
         String baseUrl = properties.getWebhdfsUri();
-        String hdfsPath = properties.getHdfsPath();
         String user = properties.getHdfsUser();
         
         // Normalize URLs
@@ -112,22 +155,26 @@ public class WebHdfsService implements HealthIndicator {
             HdfsWatcherConstants.WEBHDFS_OP_LISTSTATUS, 
             user);
         
-        logger.debug("{} Listing files with details from URL: {}", HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, url);
+        logger.debug("{} Listing files with details from directory: {} URL: {}", 
+            HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, hdfsPath, url);
         
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             
             if (response.getStatusCode().is2xxSuccessful()) {
                 List<Map<String, Object>> fileDetails = parseFileListWithDetailsResponse(response.getBody());
-                logger.info("Successfully listed {} files with details from WebHDFS path: {}", fileDetails.size(), hdfsPath);
+                logger.debug("{} Successfully listed {} files from directory: {}", 
+                    HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, fileDetails.size(), hdfsPath);
                 return fileDetails;
             } else {
-                logger.error("WebHDFS LISTSTATUS failed with status: {}", response.getStatusCode());
+                logger.error("{} WebHDFS LISTSTATUS failed for directory {} with status: {}", 
+                    HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, hdfsPath, response.getStatusCode());
                 throw new RuntimeException("WebHDFS LISTSTATUS failed: " + response.getStatusCode());
             }
         } catch (Exception e) {
-            logger.error("Failed to list files with details from WebHDFS path: {}", hdfsPath, e);
-            throw new RuntimeException("Failed to list files with details from WebHDFS", e);
+            logger.error("{} Failed to list files from directory: {}", 
+                HdfsWatcherConstants.LOG_PREFIX_WEBHDFS_SERVICE, hdfsPath, e);
+            throw new RuntimeException("Failed to list files from directory: " + hdfsPath, e);
         }
     }
 
@@ -437,6 +484,20 @@ public class WebHdfsService implements HealthIndicator {
             throw new IllegalArgumentException(
                 HdfsWatcherConstants.ERROR_INVALID_PATH + ": " + filename);
         }
+    }
+
+    /**
+     * Lists files with detailed metadata from WebHDFS (backward compatibility).
+     * 
+     * @return list of file details with metadata
+     * @throws IllegalStateException if configuration is invalid
+     * @throws RuntimeException if WebHDFS operation fails
+     * @deprecated Use listFilesWithDetailsFromMultipleDirectories() instead
+     */
+    @Deprecated
+    public List<Map<String, Object>> listFilesWithDetails() {
+        // For backward compatibility, use the new multiple directory method
+        return listFilesWithDetailsFromMultipleDirectories();
     }
 
     @Override

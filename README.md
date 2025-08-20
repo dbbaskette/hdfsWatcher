@@ -108,8 +108,22 @@ Response for `GET /api/files`:
 {
   "status": "success",
   "files": [
-    { "name": "file1.txt", "size": 12345, "type": "file", "state": "processed", "url": "..." },
-    { "name": "file2.txt", "size": 6789,  "type": "file", "state": "pending",   "url": "..." }
+    { 
+      "name": "policy1.pdf", 
+      "size": 12345, 
+      "type": "file", 
+      "state": "processed", 
+      "url": "...",
+      "source": "policies"
+    },
+    { 
+      "name": "ref1.txt", 
+      "size": 6789,  
+      "type": "file", 
+      "state": "pending",   
+      "url": "...",
+      "source": "reference"
+    }
   ],
   "totalFiles": 2,
   "processingEnabled": true,
@@ -117,6 +131,12 @@ Response for `GET /api/files`:
   "timestamp": 1730745600000
 }
 ```
+
+**New `source` field**: Shows which HDFS directory the file came from:
+- `"policies"` - File from `/policies` directory
+- `"reference"` - File from `/reference` directory  
+- `"local"` - File from local storage (pseudoop mode)
+- `"root"` - File from root HDFS directory (`/`)
 
 Notes
 - The `url` field is the downstream processing URL.

@@ -83,6 +83,7 @@ Phases and Steps
 - [x] Document new feature in README and SCDF examples
 - [x] Fix comma-separated string parsing for hdfs-paths property
 - [x] Add debug logging for HDFS path processing
+- [x] Implement combined file listing with source directory information
 
 Phase 0 — Baseline and alignment [Planned]
 - Review versions (see `versions.txt`) and confirm Java/Spring Boot alignment

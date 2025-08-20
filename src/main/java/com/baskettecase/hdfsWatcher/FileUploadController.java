@@ -259,19 +259,21 @@ public class FileUploadController {
                             fileInfo.put("type", "file");
                             fileInfo.put("state", isProcessed ? "processed" : "pending");
                             fileInfo.put("url", url);
+                            fileInfo.put("source", "local"); // Add source field for consistency
                             fileDetails.add(fileInfo);
                         } catch (Exception e) {
                             logger.warn("Error computing file details for {}", filename, e);
                         }
                     }
                 } else {
-                    // Use WebHDFS for detailed file information
-                    List<Map<String, Object>> hdfsFiles = webHdfsService.listFilesWithDetails();
+                    // Use WebHDFS for detailed file information from multiple directories
+                    List<Map<String, Object>> hdfsFiles = webHdfsService.listFilesWithDetailsFromMultipleDirectories();
                     
                     for (Map<String, Object> hdfsFile : hdfsFiles) {
                         String filename = (String) hdfsFile.get("filename");
                         Long size = (Long) hdfsFile.get("size");
                         Long modificationTime = (Long) hdfsFile.get("modificationTime");
+                        String source = (String) hdfsFile.get("source"); // New source field
                         
                         // Generate hash for this file
                         String fileHash = processedFilesService.generateFileHash(filename, size, modificationTime);
@@ -283,9 +285,13 @@ public class FileUploadController {
                         }
                         // Normalize
                         baseUrl = baseUrl.replaceAll("/+$", "");
-                        String hdfsPath = properties.getHdfsPath();
-                        if (hdfsPath == null) { hdfsPath = "/"; }
-                        if (!hdfsPath.startsWith("/")) { hdfsPath = "/" + hdfsPath; }
+                        
+                        // Use the source directory from the file metadata
+                        String hdfsPath = "/" + source;
+                        if (source.equals("root")) {
+                            hdfsPath = "/";
+                        }
+                        
                         String encodedFilename = UrlUtils.encodePathSegment(filename);
                         // Build a direct OPEN url including user for compatibility with tools/UIs
                         String url = String.format("%s%s%s/%s?op=%s&user.name=%s",
@@ -302,6 +308,7 @@ public class FileUploadController {
                         fileInfo.put("type", String.valueOf(hdfsFile.getOrDefault("type", "file")).toLowerCase());
                         fileInfo.put("state", isProcessed ? "processed" : "pending");
                         fileInfo.put("url", url);
+                        fileInfo.put("source", source); // Add source field to response
                         fileDetails.add(fileInfo);
                     }
                 }
