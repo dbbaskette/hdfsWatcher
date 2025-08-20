@@ -32,6 +32,12 @@
       "defaultValue": "/"
     },
     {
+      "name": "hdfswatcher.hdfs-paths-string",
+      "type": "java.lang.String",
+      "description": "Comma-separated list of HDFS paths to watch (e.g., '/policies,/documents,/reports')",
+      "defaultValue": "/"
+    },
+    {
       "name": "hdfswatcher.hdfs-path",
       "type": "java.lang.String",
       "description": "HDFS path to watch (deprecated: use hdfs-paths instead for multiple directory support)",

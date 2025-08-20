@@ -30,7 +30,11 @@ public class HdfsWatcherProperties {
     private String webhdfsUri;
 
     /** Paths of the HDFS directories to watch (comma-separated) */
+    private String hdfsPathsString = "/";
     private List<String> hdfsPaths = Arrays.asList("/");
+    
+    /** Test property to verify binding is working */
+    private String testProperty = "default";
     
     /** @deprecated Use hdfsPaths instead for multiple directory support */
     @Deprecated
@@ -84,11 +88,13 @@ public class HdfsWatcherProperties {
     @PostConstruct
     public void init() {
         logger.debug("Initializing HdfsWatcherProperties");
+        logger.debug("{} Raw hdfsPathsString: '{}'", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPathsString);
+        logger.debug("{} Raw hdfsPath: '{}'", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, hdfsPath);
+        logger.debug("{} Test property: '{}'", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, testProperty);
         
-        // Parse comma-separated hdfsPaths if it's a single string
-        if (hdfsPaths.size() == 1 && hdfsPaths.get(0).contains(",")) {
-            String pathsString = hdfsPaths.get(0);
-            hdfsPaths = Arrays.stream(pathsString.split(","))
+        // Parse comma-separated hdfsPathsString into hdfsPaths list
+        if (hdfsPathsString != null && !hdfsPathsString.trim().isEmpty()) {
+            hdfsPaths = Arrays.stream(hdfsPathsString.split(","))
                 .map(String::trim)
                 .filter(path -> !path.isEmpty())
                 .collect(java.util.stream.Collectors.toList());
@@ -257,22 +263,24 @@ public class HdfsWatcherProperties {
 
     public List<String> getHdfsPaths() { return hdfsPaths; }
     
+    public String getHdfsPathsString() { return hdfsPathsString; }
+    
+    public void setHdfsPathsString(String hdfsPathsString) { 
+        this.hdfsPathsString = hdfsPathsString != null ? hdfsPathsString : "/";
+    }
+    
     public void setHdfsPaths(List<String> hdfsPaths) { 
         this.hdfsPaths = hdfsPaths != null ? hdfsPaths : Arrays.asList("/");
+        // Also update the string representation for consistency
+        this.hdfsPathsString = String.join(",", hdfsPaths);
     }
     
     /**
      * Setter that can handle both List and String inputs for flexible configuration binding
      */
     public void setHdfsPaths(String hdfsPathsString) {
-        if (hdfsPathsString != null && !hdfsPathsString.trim().isEmpty()) {
-            this.hdfsPaths = Arrays.stream(hdfsPathsString.split(","))
-                .map(String::trim)
-                .filter(path -> !path.isEmpty())
-                .collect(java.util.stream.Collectors.toList());
-        } else {
-            this.hdfsPaths = Arrays.asList("/");
-        }
+        this.hdfsPathsString = hdfsPathsString != null ? hdfsPathsString : "/";
+        // The actual parsing will happen in @PostConstruct
     }
     
     /** @deprecated Use getHdfsPaths instead for multiple directory support */
@@ -315,5 +323,14 @@ public class HdfsWatcherProperties {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public String getTestProperty() {
+        return testProperty;
+    }
+
+    public void setTestProperty(String testProperty) {
+        this.testProperty = testProperty;
+        logger.debug("{} Test property set to: {}", HdfsWatcherConstants.LOG_PREFIX_PROPERTIES, testProperty);
     }
 }
