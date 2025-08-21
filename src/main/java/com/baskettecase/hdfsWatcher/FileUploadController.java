@@ -289,10 +289,25 @@ public class FileUploadController {
                         // Normalize
                         baseUrl = baseUrl.replaceAll("/+$", "");
                         
-                        // Use the source directory from the file metadata
-                        String hdfsPath = "/" + source;
-                        if (source.equals("root")) {
-                            hdfsPath = "/";
+                        // Use the source directory from the file metadata to find the correct HDFS path
+                        String hdfsPath = null;
+                        // Find the original HDFS path that matches this source
+                        for (String configuredPath : properties.getHdfsPaths()) {
+                            String dirName = configuredPath;
+                            if (dirName.startsWith("/")) {
+                                dirName = dirName.substring(1);
+                            }
+                            if (dirName.isEmpty()) {
+                                dirName = "root";
+                            }
+                            if (dirName.equals(source)) {
+                                hdfsPath = configuredPath;  // Use the original configured path
+                                break;
+                            }
+                        }
+                        // Fallback if no match found
+                        if (hdfsPath == null) {
+                            hdfsPath = "/" + source;
                         }
                         
                         String encodedFilename = UrlUtils.encodePathSegment(filename);

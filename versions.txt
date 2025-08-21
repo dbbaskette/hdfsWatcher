@@ -1,8 +1,8 @@
 Hadoop HDFS 3.3.6
-Spring Boot 3.4.5
+Spring Boot 3.5.4
 Java 21
 Spring AI 1.0.0-RC1
 Spring Cloud Data Flow 2.11.5
-Spring Cloud 2024.0.1
+Spring Cloud 2025.0.0
 Maven
 https://gist.githubusercontent.com/dbbaskette/e3c3b0c7ff90c715c6b11ca1e45bb3a6/raw/92a215919bf0a177c7caf7a9ee56eb67a6e9e4e6/release.sh
