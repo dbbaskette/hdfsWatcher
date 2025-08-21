@@ -566,21 +566,71 @@ public class FileUploadController {
         } else {
             // For HDFS mode, build the WebHDFS URL
             String baseUrl = properties.getWebhdfsUri();
-            String hdfsPath = properties.getHdfsPath();
-            // user not needed for building immediate URL
             
             if (baseUrl == null || baseUrl.isEmpty()) {
                 // Fallback to hdfsUri logic
                 baseUrl = buildBaseUriFromHdfsUri();
             }
             
+            // Find the correct HDFS path for this file by looking it up in file metadata
+            String hdfsPath = findCorrectHdfsPathForFile(filename);
+            
             String encodedFilename = UrlUtils.encodePathSegment(filename);
             String webhdfsUrl = baseUrl.replaceAll("/$", "") + 
                                HdfsWatcherConstants.WEBHDFS_PATH + 
                                hdfsPath.replaceAll("/$", "") + "/" + encodedFilename;
             
+            logger.error("DEBUGGING processFileImmediately: filename={}, hdfsPath={}, finalURL={}", 
+                        filename, hdfsPath, webhdfsUrl);
+            
             return webhdfsUrl;
         }
+    }
+    
+    /**
+     * Finds the correct HDFS path for a file by looking it up in file metadata.
+     */
+    private String findCorrectHdfsPathForFile(String filename) {
+        try {
+            // Get files from WebHDFS with metadata
+            List<Map<String, Object>> hdfsFiles = webHdfsService.listFilesWithDetailsFromMultipleDirectories();
+            
+            for (Map<String, Object> hdfsFile : hdfsFiles) {
+                String fileFilename = (String) hdfsFile.get("filename");
+                String source = (String) hdfsFile.get("source");
+                
+                if (filename.equals(fileFilename)) {
+                    // Find the original HDFS path that matches this source
+                    for (String configuredPath : properties.getHdfsPaths()) {
+                        String dirName = configuredPath;
+                        if (dirName.startsWith("/")) {
+                            dirName = dirName.substring(1);
+                        }
+                        if (dirName.isEmpty()) {
+                            dirName = "root";
+                        }
+                        if (dirName.equals(source)) {
+                            logger.error("DEBUGGING findCorrectHdfsPathForFile: filename={}, source={}, configuredPath={}", 
+                                        filename, source, configuredPath);
+                            return configuredPath;  // Use the original configured path
+                        }
+                    }
+                    // Fallback if no configured path matches the source
+                    String fallbackPath = "/" + source;
+                    logger.error("DEBUGGING findCorrectHdfsPathForFile: filename={}, source={}, using fallback={}", 
+                                filename, source, fallbackPath);
+                    return fallbackPath;
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error finding HDFS path for file: {}", filename, e);
+        }
+        
+        // Ultimate fallback: use the legacy single path
+        String legacyPath = properties.getHdfsPath();
+        logger.error("DEBUGGING findCorrectHdfsPathForFile: filename={}, using legacy fallback={}", 
+                    filename, legacyPath);
+        return legacyPath != null ? legacyPath : "/";
     }
     
     /**
