@@ -3,8 +3,6 @@ package com.baskettecase.hdfsWatcher.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 
 /**
  * Service to manage the processing state (start/stop) of the HDFS Watcher.
@@ -16,10 +14,6 @@ public class ProcessingStateService {
     private static final Logger logger = LoggerFactory.getLogger(ProcessingStateService.class);
     
     private volatile boolean isProcessingEnabled = false; // Default to stopped
-    
-    // ADD THESE FIELDS:
-    private volatile OffsetDateTime lastStateChange = OffsetDateTime.now(ZoneOffset.UTC);
-    private volatile String lastChangeReason = "Application startup";
     
     /**
      * Checks if file processing is currently enabled.
@@ -35,8 +29,6 @@ public class ProcessingStateService {
      */
     public void enableProcessing() {
         isProcessingEnabled = true;
-        lastStateChange = OffsetDateTime.now(ZoneOffset.UTC);
-        lastChangeReason = "Processing enabled via API";
         logger.info("File processing has been ENABLED");
     }
     
@@ -45,8 +37,6 @@ public class ProcessingStateService {
      */
     public void disableProcessing() {
         isProcessingEnabled = false;
-        lastStateChange = OffsetDateTime.now(ZoneOffset.UTC);
-        lastChangeReason = "Processing disabled via API";
         logger.info("File processing has been DISABLED");
     }
     
@@ -57,8 +47,6 @@ public class ProcessingStateService {
      */
     public boolean toggleProcessing() {
         isProcessingEnabled = !isProcessingEnabled;
-        lastStateChange = OffsetDateTime.now(ZoneOffset.UTC);
-        lastChangeReason = isProcessingEnabled ? "Processing enabled via toggle" : "Processing disabled via toggle";
         logger.info("File processing has been {}", isProcessingEnabled ? "ENABLED" : "DISABLED");
         return isProcessingEnabled;
     }
@@ -66,27 +54,9 @@ public class ProcessingStateService {
     /**
      * Gets the current processing state as a string.
      * 
-     * @return "STARTED" or "STOPPED"
+     * @return "enabled" or "disabled"
      */
     public String getProcessingState() {
-        return isProcessingEnabled ? "STARTED" : "STOPPED";
-    }
-    
-    /**
-     * Gets the timestamp of the last state change.
-     * 
-     * @return the last change timestamp
-     */
-    public OffsetDateTime getLastChanged() {
-        return lastStateChange;
-    }
-    
-    /**
-     * Gets the reason for the last state change.
-     * 
-     * @return the last change reason
-     */
-    public String getLastChangeReason() {
-        return lastChangeReason;
+        return isProcessingEnabled ? "enabled" : "disabled";
     }
 } 

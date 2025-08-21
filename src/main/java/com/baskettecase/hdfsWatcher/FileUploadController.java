@@ -13,6 +13,8 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -82,7 +84,7 @@ public class FileUploadController {
             return ResponseEntity.badRequest().body(Map.of(
                 "status", "error",
                 "message", "Please select a file to upload",
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             ));
         }
 
@@ -103,7 +105,7 @@ public class FileUploadController {
             response.put("status", "success");
             response.put("filename", originalFilename);
             response.put("url", publicUrl);
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             logger.info("Successfully uploaded file: {} -> {}", originalFilename, publicUrl);
             return ResponseEntity.ok(response);
 
@@ -112,7 +114,7 @@ public class FileUploadController {
             return ResponseEntity.status(500).body(Map.of(
                 "status", "error",
                 "message", "Failed to upload file: " + originalFilename + ". Error: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             ));
         }
     }
@@ -207,9 +209,10 @@ public class FileUploadController {
             response.put("totalFiles", files.size());
             response.put("processedFilesCount", processedCount);
             response.put("processedFilesHashes", processedHashes);
-            response.put("processingEnabled", isProcessingEnabled);
-            response.put("processingState", processingStateService.getProcessingState());
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("enabled", isProcessingEnabled);
+            response.put("status", processingStateService.getProcessingState()); // Returns "STARTED" or "STOPPED"
+            response.put("consumerStatus", determineConsumerStatus(isProcessingEnabled));
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -217,7 +220,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -324,9 +327,10 @@ public class FileUploadController {
             response.put("totalFiles", fileDetails.size());
             response.put("hdfsDisconnected", hdfsDisconnected);
             response.put("mode", properties.getMode());
-            response.put("processingEnabled", processingStateService.isProcessingEnabled());
-            response.put("processingState", processingStateService.getProcessingState());
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("enabled", processingStateService.isProcessingEnabled());
+            response.put("status", processingStateService.getProcessingState()); // Returns "STARTED" or "STOPPED"
+            response.put("consumerStatus", determineConsumerStatus(processingStateService.isProcessingEnabled()));
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -334,7 +338,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -376,7 +380,7 @@ public class FileUploadController {
             response.put("reprocessedCount", reprocessedCount);
             response.put("reprocessedHashes", reprocessedHashes);
             response.put("message", "Successfully marked " + reprocessedCount + " files for reprocessing");
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             
             logger.info("Reprocessed {} files", reprocessedCount);
             return ResponseEntity.ok(response);
@@ -386,7 +390,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to reprocess files: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -463,7 +467,7 @@ public class FileUploadController {
             response.put("processedHashes", processedHashes);
             response.put("failedHashes", failedHashes);
             response.put("message", "Successfully processed " + processedCount + " files immediately");
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             
             logger.info("Immediately processed {} files", processedCount);
             return ResponseEntity.ok(response);
@@ -473,7 +477,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to process files immediately: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -680,7 +684,7 @@ public class FileUploadController {
             response.put("status", "success");
             response.put("clearedCount", clearedCount);
             response.put("message", "Successfully cleared " + clearedCount + " processed files");
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             
             logger.info("Cleared {} processed files", clearedCount);
             return ResponseEntity.ok(response);
@@ -690,7 +694,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to clear processed files: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -716,14 +720,14 @@ public class FileUploadController {
             response.put("processingEnabled", false);
             response.put("clearedCount", clearedCount);
             response.put("message", "Processing stopped and " + clearedCount + " processed files cleared");
-            response.put("timestamp", System.currentTimeMillis());
+            response.put("timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error performing reprocess-all", e);
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to reprocess all: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -756,26 +760,36 @@ public class FileUploadController {
     }
     
     /**
+     * Helper method to determine consumer status based on processing state.
+     */
+    private String determineConsumerStatus(boolean processingEnabled) {
+        return processingEnabled ? "CONSUMING" : "IDLE";
+    }
+    
+    /**
      * Gets the current processing state.
      * 
      * @return JSON response with processing state
      */
-    @GetMapping("/api/processing-state")
+    @GetMapping("/api/processing/state")
     @ResponseBody
     public ResponseEntity<Map<String, Object>> getProcessingState() {
         try {
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("processingEnabled", processingStateService.isProcessingEnabled());
-            response.put("processingState", processingStateService.getProcessingState());
-            response.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> response = Map.of(
+                "enabled", processingStateService.isProcessingEnabled(),
+                "status", processingStateService.getProcessingState(), // Will return "STARTED" or "STOPPED"
+                "consumerStatus", determineConsumerStatus(processingStateService.isProcessingEnabled()),
+                "lastChanged", processingStateService.getLastChanged().toString(),
+                "lastChangeReason", processingStateService.getLastChangeReason(),
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
+            );
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error getting processing state", e);
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -795,13 +809,17 @@ public class FileUploadController {
             // Immediately process any pending files
             int processedCount = processPendingFiles();
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("processingEnabled", true);
-            response.put("processingState", "enabled");
-            response.put("immediatelyProcessedCount", processedCount);
-            response.put("message", "File processing has been ENABLED and " + processedCount + " pending files were processed immediately");
-            response.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "Processing started successfully and " + processedCount + " pending files were processed immediately",
+                "stateChanged", true,
+                "enabled", true,
+                "status", "STARTED",
+                "consumerStatus", "CONSUMING",
+                "immediatelyProcessedCount", processedCount,
+                "lastChanged", OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
+            );
             
             logger.info("File processing ENABLED via API and {} files processed immediately", processedCount);
             return ResponseEntity.ok(response);
@@ -810,7 +828,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to enable processing: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -827,12 +845,16 @@ public class FileUploadController {
         try {
             processingStateService.disableProcessing();
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("processingEnabled", false);
-            response.put("processingState", "disabled");
-            response.put("message", "File processing has been DISABLED");
-            response.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "Processing stopped successfully. Files will remain in storage.",
+                "stateChanged", true,
+                "enabled", false,
+                "status", "STOPPED",
+                "consumerStatus", "IDLE",
+                "lastChanged", OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
+            );
             
             logger.info("File processing DISABLED via API");
             return ResponseEntity.ok(response);
@@ -841,7 +863,7 @@ public class FileUploadController {
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to disable processing: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
@@ -856,32 +878,47 @@ public class FileUploadController {
     @ResponseBody
     public ResponseEntity<Map<String, Object>> toggleProcessing() {
         try {
+            boolean previousState = processingStateService.isProcessingEnabled();
             boolean newState = processingStateService.toggleProcessing();
+            String action = newState ? "started" : "stopped";
             
-            Map<String, Object> response = new HashMap<>();
-            response.put("status", "success");
-            response.put("processingEnabled", newState);
-            response.put("processingState", newState ? "enabled" : "disabled");
-            
+            int processedCount = 0;
             // If enabling processing, immediately process pending files
             if (newState) {
-                int processedCount = processPendingFiles();
-                response.put("immediatelyProcessedCount", processedCount);
-                response.put("message", "File processing has been ENABLED and " + processedCount + " pending files were processed immediately");
+                processedCount = processPendingFiles();
                 logger.info("File processing ENABLED via toggle and {} files processed immediately", processedCount);
             } else {
-                response.put("message", "File processing has been DISABLED");
                 logger.info("File processing DISABLED via toggle");
             }
             
-            response.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", String.format("Processing %s successfully. Previous state: %s, Current state: %s. %s",
+                    action,
+                    previousState ? "enabled" : "disabled",
+                    newState ? "enabled" : "disabled",
+                    newState ? processedCount + " pending files were processed immediately." : "Files will remain in storage."),
+                "action", action,
+                "previousState", Map.of(
+                    "enabled", previousState,
+                    "status", previousState ? "STARTED" : "STOPPED"
+                ),
+                "currentState", Map.of(
+                    "enabled", newState,
+                    "status", newState ? "STARTED" : "STOPPED",
+                    "consumerStatus", newState ? "CONSUMING" : "IDLE"
+                ),
+                "immediatelyProcessedCount", newState ? processedCount : null,
+                "lastChanged", OffsetDateTime.now(ZoneOffset.UTC).toString(),
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
+            );
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             logger.error("Error toggling processing", e);
             Map<String, Object> response = Map.of(
                 "status", "error",
                 "message", "Failed to toggle processing: " + e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                "timestamp", OffsetDateTime.now(ZoneOffset.UTC).toString()
             );
             return ResponseEntity.status(500).body(response);
         }
