@@ -402,6 +402,7 @@ public class HdfsWatcherService {
 
     /**
      * Builds WebHDFS URL with proper encoding and validation.
+     * This method is used during background HDFS polling and sends URLs to the output queue.
      */
     private String buildWebHdfsUrl(org.apache.hadoop.fs.Path path) {
         if (path == null) {
@@ -409,13 +410,49 @@ public class HdfsWatcherService {
         }
         
         String baseUri = determineBaseUri();
-        String encodedPath = buildEncodedPath(path);
+        
+        // Extract the relative path from the configured HDFS paths
+        String relativePath = extractRelativePath(path);
+        // Convert the relative path string back to a Path object for encoding
+        org.apache.hadoop.fs.Path relativePathObj = new org.apache.hadoop.fs.Path(relativePath);
+        String encodedPath = buildEncodedPath(relativePathObj);
         
         String webhdfsUrl = baseUri.replaceAll("/$", "") + 
                            HdfsWatcherConstants.WEBHDFS_PATH + 
                            encodedPath;
         
+        logger.debug("Building WebHDFS URL: original path: {}, relative path: {}, final URL: {}", 
+                    path, relativePath, webhdfsUrl);
+        
         return webhdfsUrl;
+    }
+    
+    /**
+     * Extracts the relative path from the configured HDFS paths.
+     * This ensures URLs show the correct directory structure as configured.
+     */
+    private String extractRelativePath(org.apache.hadoop.fs.Path path) {
+        String fullPath = path.toString();
+        logger.debug("Extracting relative path from full path: {}", fullPath);
+        
+        // Check which configured HDFS path this file belongs to
+        for (String configuredPath : properties.getHdfsPaths()) {
+            if (fullPath.startsWith(configuredPath)) {
+                // Return the path relative to the configured directory
+                String relativePath = fullPath.substring(configuredPath.length());
+                // Ensure it starts with /
+                if (!relativePath.startsWith("/")) {
+                    relativePath = "/" + relativePath;
+                }
+                logger.debug("File {} belongs to configured path {}, relative path: {}", 
+                           fullPath, configuredPath, relativePath);
+                return relativePath;
+            }
+        }
+        
+        // Fallback: use the full path if no configured path matches
+        logger.warn("No configured HDFS path matches file: {}, using full path", fullPath);
+        return fullPath;
     }
 
     private volatile long lastPollTimestamp = 0L;
