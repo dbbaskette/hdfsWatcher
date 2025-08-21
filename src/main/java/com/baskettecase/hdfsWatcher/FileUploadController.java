@@ -292,6 +292,9 @@ public class FileUploadController {
                         // Use the source directory from the file metadata to find the correct HDFS path
                         String hdfsPath = null;
                         // Find the original HDFS path that matches this source
+                        logger.debug("Building URL for file: {} with source: {}", filename, source);
+                        logger.debug("Configured HDFS paths: {}", properties.getHdfsPaths());
+                        
                         for (String configuredPath : properties.getHdfsPaths()) {
                             String dirName = configuredPath;
                             if (dirName.startsWith("/")) {
@@ -300,14 +303,17 @@ public class FileUploadController {
                             if (dirName.isEmpty()) {
                                 dirName = "root";
                             }
+                            logger.debug("Comparing source '{}' with dirName '{}' from configuredPath '{}'", source, dirName, configuredPath);
                             if (dirName.equals(source)) {
                                 hdfsPath = configuredPath;  // Use the original configured path
+                                logger.debug("Found match! Using hdfsPath: {}", hdfsPath);
                                 break;
                             }
                         }
                         // Fallback if no match found
                         if (hdfsPath == null) {
                             hdfsPath = "/" + source;
+                            logger.warn("No configured path match found for source '{}', using fallback: {}", source, hdfsPath);
                         }
                         
                         String encodedFilename = UrlUtils.encodePathSegment(filename);
