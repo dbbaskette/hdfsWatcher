@@ -251,7 +251,10 @@ public class HdfsWatcherService {
                 
                 // Process the file - send to queue first, then mark as processed
                 try {
+                    logger.error("DEBUGGING: Processing file from HDFS directory: {}, file path: {}, file name: {}", 
+                               hdfsPath, fileStatus.getPath(), fileStatus.getPath().getName());
                     String webhdfsUrl = buildWebHdfsUrl(fileStatus.getPath());
+                    logger.error("DEBUGGING: Built WebHDFS URL: {}", webhdfsUrl);
                     publishFileEvent("FILE_START", fileStatus.getPath().getName());
                     output.send(webhdfsUrl, properties.getMode());
                     publishFileEvent("FILE_COMPLETE", fileStatus.getPath().getName());
@@ -433,10 +436,12 @@ public class HdfsWatcherService {
      */
     private String extractRelativePath(org.apache.hadoop.fs.Path path) {
         String fullPath = path.toString();
-        logger.debug("Extracting relative path from full path: {}", fullPath);
+        logger.error("DEBUGGING: Extracting relative path from full path: {}", fullPath);
+        logger.error("DEBUGGING: Configured HDFS paths: {}", properties.getHdfsPaths());
         
         // Check which configured HDFS path this file belongs to
         for (String configuredPath : properties.getHdfsPaths()) {
+            logger.error("DEBUGGING: Checking if '{}' starts with '{}'", fullPath, configuredPath);
             if (fullPath.startsWith(configuredPath)) {
                 // Return the path relative to the configured directory
                 String relativePath = fullPath.substring(configuredPath.length());
@@ -444,14 +449,14 @@ public class HdfsWatcherService {
                 if (!relativePath.startsWith("/")) {
                     relativePath = "/" + relativePath;
                 }
-                logger.debug("File {} belongs to configured path {}, relative path: {}", 
+                logger.error("DEBUGGING: MATCH FOUND! File {} belongs to configured path {}, relative path: {}", 
                            fullPath, configuredPath, relativePath);
                 return relativePath;
             }
         }
         
         // Fallback: use the full path if no configured path matches
-        logger.warn("No configured HDFS path matches file: {}, using full path", fullPath);
+        logger.error("DEBUGGING: NO MATCH! No configured HDFS path matches file: {}, using full path", fullPath);
         return fullPath;
     }
 
